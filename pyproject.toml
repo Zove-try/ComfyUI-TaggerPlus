@@ -11,11 +11,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/1537197750zyq-ai/ComfyUI-TaggerPlus"
-Repository = "https://github.com/1537197750zyq-ai/ComfyUI-TaggerPlus"
-Issues = "https://github.com/1537197750zyq-ai/ComfyUI-TaggerPlus/issues"
+Homepage = "https://github.com/Zove-try/ComfyUI-TaggerPlus"
+Repository = "https://github.com/Zove-try/ComfyUI-TaggerPlus"
+Issues = "https://github.com/Zove-try/ComfyUI-TaggerPlus/issues"
 
 [tool.comfy]
-PublisherId = "1537197750zyq-ai"   # 需与你在 ComfyUI Registry 注册的 publisher id 一致
+PublisherId = "Zove-try"   # 需与你在 ComfyUI Registry 注册的 publisher id 一致
 DisplayName = "TaggerPlus"
 Icon = ""

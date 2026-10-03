@@ -22,7 +22,7 @@
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/1537197750zyq-ai/ComfyUI-TaggerPlus
+git clone https://github.com/Zove-try/ComfyUI-TaggerPlus
 ```
 
 或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
