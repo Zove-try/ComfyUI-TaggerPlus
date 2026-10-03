@@ -6,3 +6,6 @@
 #   CPU  → onnxruntime
 onnxruntime-gpu>=1.17
 safetensors>=0.4
+
+# 社区模型（safetensors + timm）需要；ComfyUI 环境通常已自带
+timm>=0.9

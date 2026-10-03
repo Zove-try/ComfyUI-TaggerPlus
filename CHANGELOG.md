@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.1.3 — 2026-10-03
+
+### 新增
+
+- **社区模型支持：直接读 safetensors + timm，免导 ONNX**
+  - 社区新模型（如 `wd-eva02-tagger-2026-canary`）通常只发 PyTorch 权重，
+    原版节点要求用户自己导出 ONNX，且极易导成 NCHW 布局导致不可用
+  - 现在把 `<名字>/model.safetensors` + `config.json` + 词表放进 `models/wd14_tagger/` 即可
+- **ONNX 布局自动适配**：自动识别 NHWC / NCHW 并转置，导出成 NCHW 的社区 ONNX 不再需要手动转换
+- ONNX 输出若不是概率（导出时没带 sigmoid）会自动补 sigmoid
+- 自动下载表新增 `wd-eva02-tagger-2026-canary`（Apache-2.0 / 16,473 标签 / 训练截止 2026-05-18）
+- 同名模型同时有 ONNX 与 timm 版时，timm 版显示为 `<名字> (timm)`，两个都能选
+- 新增可选项 `color_order`(auto/bgr/rgb) 与 `preprocess`(auto/pad/crop)
+
+### 修复（开发中发现的两个预处理陷阱，实测数据）
+
+- **通道顺序**：社区模型沿用 WD 的 **BGR** 约定。喂 RGB 会把金发识别成 `blue_hair`、
+  蓝眼识别成 `blue_skin` —— 与 ONNX 版一致率只有 43.8%
+- **构图**：标签器必须"长边缩放 + 白边补方"保留整张图；用 ImageNet 的中心裁剪会把头/脚裁掉，
+  丢掉 `blue_eyes` / `blue_halo` / `blue_ribbon` 等标签，还误报 `head_out_of_frame` —— 一致率仅 50%
+
+两项修正后，同一份权重的 safetensors 与 ONNX 路径**一致率 98.5%**（实测同一张图 65 vs 64 个标签）。
+
+
 ## v0.1.2 — 2026-10-03
 
 ### 新增

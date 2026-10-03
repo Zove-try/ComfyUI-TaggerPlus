@@ -23,28 +23,38 @@ import urllib.request
 _HERE = os.path.dirname(os.path.realpath(__file__))
 _PACK = os.path.dirname(_HERE)
 
+#: 结构：显示名 -> (HF 仓库, [(远端文件, 保存名)], 体积说明, 备注, 是否解压到子目录)
 KNOWN = {
     "wd14": {
         "wd-eva02-large-tagger-v3": ("SmilingWolf/wd-eva02-large-tagger-v3",
                                      [("model.onnx", "{name}.onnx"),
-                                      ("selected_tags.csv", "{name}.csv")], "1.2 GB", "最准（推荐）"),
+                                      ("selected_tags.csv", "{name}.csv")], "1.2 GB", "最准（推荐）", False),
         "wd-swinv2-tagger-v3": ("SmilingWolf/wd-swinv2-tagger-v3",
                                 [("model.onnx", "{name}.onnx"),
-                                 ("selected_tags.csv", "{name}.csv")], "446 MB", "较快"),
+                                 ("selected_tags.csv", "{name}.csv")], "446 MB", "较快", False),
         "wd-convnext-tagger-v3": ("SmilingWolf/wd-convnext-tagger-v3",
                                   [("model.onnx", "{name}.onnx"),
-                                   ("selected_tags.csv", "{name}.csv")], "377 MB", "较快"),
+                                   ("selected_tags.csv", "{name}.csv")], "377 MB", "较快", False),
         "wd-vit-tagger-v3": ("SmilingWolf/wd-vit-tagger-v3",
                              [("model.onnx", "{name}.onnx"),
-                              ("selected_tags.csv", "{name}.csv")], "361 MB", "最快"),
+                              ("selected_tags.csv", "{name}.csv")], "361 MB", "最快", False),
         "wd-v1-4-moat-tagger-v2": ("SmilingWolf/wd-v1-4-moat-tagger-v2",
                                    [("model.onnx", "{name}.onnx"),
-                                    ("selected_tags.csv", "{name}.csv")], "311 MB", "旧版 v1.4，可作对照"),
+                                    ("selected_tags.csv", "{name}.csv")], "311 MB", "旧版 v1.4，可作对照", False),
+        # ★ 社区新模型：官方只发 PyTorch 权重（timm），没有 ONNX。
+        #   原版节点要求用户自己导出 ONNX（还容易导成 NCHW 用不了），
+        #   本插件直接读 safetensors + timm，免转换。
+        "wd-eva02-tagger-2026-canary": (
+            "ashen-sensored/wd-eva02-tagger-2026-canary",
+            [("model.safetensors", "model.safetensors"),
+             ("config.json", "config.json"),
+             ("selected_tags.csv", "selected_tags.csv")],
+            "1.2 GB", "社区模型 · 截止 2026-05（比 v3 新两年）· 16473 标签", True),
     },
     "pixai": {
         "pixai-tagger-v1.0": ("pixai-labs/pixai-tagger-v1.0",
                               [("model.safetensors", "model.safetensors"),
-                               ("config.json", "config.json")], "1.9 GB", "官方 v1.0"),
+                               ("config.json", "config.json")], "1.9 GB", "官方 v1.0", False),
     },
 }
 
@@ -169,7 +179,7 @@ def fetch(kind, name, dest_dir, max_bytes=None):
     if not spec:
         _log(f"{TAG} 未知模型：{name}")
         return False
-    repo, files, size, _note = spec
+    repo, files, size, _note, _sub = spec
     os.makedirs(dest_dir, exist_ok=True)
     eps = endpoints()
     _log(f"{TAG} 需要下载模型 {name}（{size}），共 {len(files)} 个文件，"
@@ -200,9 +210,10 @@ def fetch(kind, name, dest_dir, max_bytes=None):
 
 def combo_entries(kind, installed):
     out = list(installed)
-    for name, (repo, files, size, note) in KNOWN.get(kind, {}).items():
-        if name not in installed:
-            out.append(f"{MARK}{name}{SUFFIX} · {size} · {note}")
+    for name, (repo, files, size, note, _sub) in KNOWN.get(kind, {}).items():
+        if name in installed or f"{name} (timm)" in installed:
+            continue
+        out.append(f"{MARK}{name}{SUFFIX} · {size} · {note}")
     return out
 
 

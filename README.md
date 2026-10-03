@@ -28,6 +28,95 @@ git clone https://github.com/Zove-try/ComfyUI-TaggerPlus
 或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
 节点出现在 **TaggerPlus** 分类下。
 
+## 节点
+
+安装后出现在 **TaggerPlus** 分类下，共两个节点。
+
+### 1. WD14 Tagger Plus ⚡
+
+- 输入：`image`、`model`（下拉）、`threshold`、`character_threshold`、`device`
+- 输出：`tags`(STRING)、**`device`**(STRING，告诉你实际跑在 GPU 还是 CPU)
+- **两种模型格式自动识别，不用转换**（详见 [社区模型支持](#社区模型支持免导-onnx)）：
+  - `.onnx` + 词表 csv —— 自动适配 **NHWC / NCHW** 布局
+  - `<名字>/model.safetensors` + `config.json` + 词表 —— 社区新模型（timm）
+- 可选：`replace_underscore`、`escape_parens`（默认关）、`sort_by_confidence`、`trailing_comma`、`exclude_tags`
+- 与原版的行为差异：
+  - `escape_parens` 默认 **False**（原版强制把 `(` `)` 转成 `\(` `\)`，会让下游按标签查表的节点失效）
+  - `sort_by_confidence` 默认 **False**（与原版一致的词表顺序）
+  - `exclude_tags` 大小写不敏感，下划线/空格两种写法都匹配
+
+### 2. PixAI Tagger Plus ⚡
+
+- 输入：`image`、`model`（下拉）、6 个类别阈值、`threshold_mode`、`device` 等
+- 输出：与原版**完全一致**的 7 个 STRING + 新增 **`device`**(STRING)
+- 模型从 `ComfyUI/models/pixai_tagger/` 自动扫描，**不再手输绝对路径**
+
+## 社区模型支持（免导 ONNX）
+
+原版 WD14 节点只吃 **NHWC 布局的 ONNX**，而社区新模型有两个现实问题：
+
+1. **只发 PyTorch 权重**（`model.safetensors`），没有 ONNX → 用户得自己导出
+2. 就算导出了，也**很容易导成 NCHW**（`[1,3,H,W]`）→ 原版节点跑不了或者出垃圾结果
+
+本插件两条路都堵上了：
+
+| 模型格式 | 目录长相 | 处理方式 |
+|---|---|---|
+| **ONNX**（WD v1.4 / v3） | `models/wd14_tagger/<名字>.onnx` + 词表 csv | 自动识别 **NHWC / NCHW**，NCHW 自动转置；输出若不是概率（logits）自动补 sigmoid |
+| **safetensors + timm**（社区模型） | `models/wd14_tagger/<名字>/model.safetensors` + `config.json` + `selected_tags.csv` | 按 `config.json` 的架构用 timm 加载，预处理按 WD 标签器约定 |
+
+**社区模型下载下来直接丢进目录就能用，不用导出 ONNX、不用管布局、不用改节点。**
+
+### 预处理细节（踩过的坑，写下来省得你也踩）
+
+社区模型基本都是从 [SmilingWolf/wd-eva02-large-tagger-v3](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3)
+微调的，**必须沿用 WD 的两条约定**，否则结果会明显错：
+
+| 约定 | 正确做法 | 做错了会怎样 |
+|---|---|---|
+| **通道顺序** | **BGR**（RGB→BGR 再归一化，参考实现 [neggles/wdv3-timm](https://github.com/neggles/wdv3-timm)） | 喂 RGB 会把**金发认成 `blue_hair`**、把蓝眼认成 `blue_skin`（实测） |
+| **构图** | **长边缩放到 448 + 白边补成正方形**（保留整张图） | 用 ImageNet 的"短边缩放+中心裁剪"会把头/脚裁掉，`blue_eyes`、`blue_halo`、`blue_ribbon` 全丢，还误报 `head_out_of_frame`（实测） |
+
+两条都做对后，同一份权重的 **safetensors 与 ONNX 两条路径一致率 98.5%**（65 vs 64 个标签）。
+
+节点上留了两个可选项以防万一：`color_order`（auto/bgr/rgb）、`preprocess`（auto/pad/crop）。
+
+### 已适配的社区模型：wd-eva02-tagger-2026-canary
+
+下拉里选 `⬇ wd-eva02-tagger-2026-canary (需下载)` 即可自动下载（权重 + config + 词表，约 1.2 GB）。
+
+| 项目 | 值 |
+|---|---|
+| 来源 | [ashen-sensored/wd-eva02-tagger-2026-canary](https://huggingface.co/ashen-sensored/wd-eva02-tagger-2026-canary) |
+| 许可 | Apache-2.0 |
+| 架构 | `eva02_large_patch14_448`（timm），320M 参数 |
+| 标签数 | **16,473**（比 WD v3 eva02-large 的 10,861 多 **5,999** 个：2,205 角色 + 3,794 通用） |
+| 训练截止 | **2026-05-18**（WD v3 是 2024-02，新两年多） |
+| 官方建议阈值 | **0.6094**（P=R 点；默认 0.35 会明显偏多，建议调到 0.6 附近） |
+
+> 实测：同一张图（Blue Archive 的时·旗袍）它能把角色标成 `toki_(blue_archive)`，
+> 这是 2024 年截止的 WD v3 做不到的 —— 做「模型知识新旧」这类测试时正好用得上。
+
+### 手动放置社区模型
+
+```
+ComfyUI/models/wd14_tagger/wd-eva02-tagger-2026-canary/
+├── model.safetensors      ← HF 仓库
+├── config.json            ← HF 仓库
+└── selected_tags.csv      ← HF 仓库
+```
+
+镜像地址（国内直连）：
+
+```
+https://hf-mirror.com/ashen-sensored/wd-eva02-tagger-2026-canary/resolve/main/model.safetensors
+https://hf-mirror.com/ashen-sensored/wd-eva02-tagger-2026-canary/resolve/main/config.json
+https://hf-mirror.com/ashen-sensored/wd-eva02-tagger-2026-canary/resolve/main/selected_tags.csv
+```
+
+> 需要 `timm`（ComfyUI 环境通常已自带；没有就 `pip install timm`）。
+> 缺 timm 时只有社区模型不可用，ONNX 模型不受影响。
+
 ## 模型下载
 
 ### 首选：什么都不用做 🎉
@@ -189,6 +278,23 @@ ComfyUI/
 > 为什么仓库里不直接附带这些 DLL：解压后 1.1 GB，GitHub 单文件上限 100 MB，仓库也没法 clone；
 > 而且 NVIDIA 运行时库应通过官方渠道分发。所以仓库保持 **约 60 KB 纯代码**，运行库按需获取。
 > 不需要了直接删掉 `cuda12/` 文件夹即可，不影响任何其他东西。
+
+### 原版为什么慢：拆开看
+
+在本机（RTX 5060 Ti）实测原版节点三张不同图：`16.50s / 16.47s / 16.21s` ——
+**耗时完全一样**，说明每次都在付同一笔固定成本。拆开后：
+
+| 环节 | 耗时 | 归属 |
+|---|---|---|
+| 磁盘顺序读 1.2 GB 模型 | 0.55 s | 无关（2,199 MB/s） |
+| 解析 10,861 行词表 | 0.01 s | 无关 |
+| **创建 ONNX 会话** | 3 – 6 s | 原节点**每次执行都重建** |
+| **推断（448²）** | CPU 约 1.6 s / GPU 约 0.1 s | 取决于 provider |
+
+最坑的是第二项：`onnxruntime-gpu` 的 CUDA provider 需要 **CUDA 12** 运行库
+（`cublasLt64_12.dll`），而 ComfyUI 便携包里的 torch 往往带 **CUDA 13**
+（`cublasLt64_13.dll`）—— 文件名不同 → 加载失败 → **静默退回 CPU**。
+ORT 只在 stderr 打一行警告，节点日志里完全看不到。
 
 ### 修好之后（本机 RTX 5060 Ti 实测）
 

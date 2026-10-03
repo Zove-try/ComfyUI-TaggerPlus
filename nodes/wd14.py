@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-WD14 Tagger Plus —— 解决了 ComfyUI-WD14-Tagger 的两个坑：
+WD14 Tagger Plus
+================
+支持两种模型格式，自动识别，用户不用做任何转换：
 
-1. 慢：原节点在每次执行时都重新 `InferenceSession(...)`（1.2GB 模型每次重载），
-   而且 ONNX Runtime 的 CUDA provider 加载失败时会**静默**退回 CPU（实测 16.5s/张）。
-   本节点：会话按 (模型, provider) 缓存 + 词表只解析一次 + **明确告诉你实际跑在什么设备上**。
-2. 模型路径：改为扫描 ComfyUI 的 models 目录，下拉选择；兼容旧插件的 models 目录。
+1. **ONNX**（`.onnx` + 词表 csv）—— 传统 WD v1.4 / v3 系列
+   - 自动识别输入布局：NHWC（`[1,H,W,3]`）或 NCHW（`[1,3,H,W]`）
+     ★ 社区里大量模型被导出成 NCHW，原版节点会直接失败或出垃圾结果，这里自动转
+   - 输出若没内置 sigmoid（是 logits）也会自动补上
+2. **safetensors + timm**（`<名字>/model.safetensors` + `config.json` + 词表）
+   - 社区新模型（如 wd-eva02-tagger-2026-canary）往往**只发 PyTorch 权重**，
+     原版节点必须让用户自己导出 ONNX（还容易导错布局）。这里直接读 timm 模型，
+     按 config.json 里的 pretrained_cfg 做预处理（bicubic + center crop + 0.5/0.5 归一化）
 
-与 pysssss 版的行为差异（都为可选项，默认按"更干净"的方向）：
-- `escape_parens` 默认 False（原版强制把 ( ) 转义成 \\( \\)，会让下游分类器查不到表）
-- `sort_by_confidence` 默认 False（与原版一致的词表顺序）
-- `exclude_tags` 双向大小写不敏感匹配
+性能：
+- ONNX 会话按 (模型, provider) 缓存，词表只解析一次
+- timm 权重按 (权重, config, 设备) 缓存
+- **实际使用的设备**作为输出返回，不会再静默退回 CPU
 """
 import csv
 import glob
+import json
 import os
 import site
 import threading
@@ -23,7 +30,6 @@ from PIL import Image
 
 from . import fetch
 
-# ---------------------------------------------------------------- 模型目录
 _HERE = os.path.dirname(os.path.realpath(__file__))
 _PACK = os.path.dirname(_HERE)
 
@@ -33,10 +39,22 @@ try:
     _COMFY_ROOT = folder_paths.base_path
 except Exception:                    # 脱离 ComfyUI 也能用（便于单测/脚本调用）
     _MODELS_ROOT = os.path.join(_PACK, "models")
-    # 插件在 <ComfyUI>/custom_nodes/<pack> → 往上推两级就是 ComfyUI 根
     _COMFY_ROOT = os.path.dirname(os.path.dirname(_PACK))
 
-#: 扫描顺序：用户 models 目录 → 插件自带 → 旧插件目录（平滑迁移）
+
+def _log(msg="", ascii_fallback=None):
+    """安全打印：Windows GBK 控制台打印中文/符号会抛 UnicodeEncodeError；
+    并且必须 flush（ComfyUI 启动器下 stdout 是块缓冲，不刷新看不到实时输出）"""
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        try:
+            print(ascii_fallback if ascii_fallback is not None
+                  else msg.encode("ascii", "replace").decode("ascii"), flush=True)
+        except Exception:
+            pass
+
+
 def search_dirs():
     dirs = [
         os.path.join(_MODELS_ROOT, "wd14_tagger"),
@@ -45,11 +63,9 @@ def search_dirs():
     ]
     if _COMFY_ROOT:
         dirs.append(os.path.join(_COMFY_ROOT, "custom_nodes", "ComfyUI-WD14-Tagger", "models"))
-    # 额外目录：插件根目录放 taggerplus_dirs.json，{"wd14_tagger": ["D:/xxx"]}
     cfg = os.path.join(_PACK, "taggerplus_dirs.json")
     if os.path.exists(cfg):
         try:
-            import json
             for d in json.load(open(cfg, encoding="utf-8")).get("wd14_tagger", []):
                 dirs.append(os.path.expanduser(d))
         except Exception as e:
@@ -62,9 +78,14 @@ def search_dirs():
     return out
 
 
+def model_dir():
+    d = os.path.join(_MODELS_ROOT, "wd14_tagger")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def vocab_path(onnx_path):
-    """词表定位：优先 同名.csv，其次 HF 原始的 selected_tags.csv，
-    最后接受目录里唯一的 csv（这样手动下载的用户不用改名）"""
+    """词表定位：同名 .csv → selected_tags.csv → 目录里唯一的 csv（手动下载不用改名）"""
     stem = os.path.splitext(onnx_path)[0]
     for cand in (stem + ".csv", os.path.join(os.path.dirname(onnx_path), "selected_tags.csv")):
         if os.path.exists(cand):
@@ -73,36 +94,68 @@ def vocab_path(onnx_path):
     return sibs[0] if len(sibs) == 1 else None
 
 
+def folder_vocab(folder):
+    for cand in ("selected_tags.csv", "tags.csv"):
+        p = os.path.join(folder, cand)
+        if os.path.exists(p):
+            return p
+    sibs = glob.glob(os.path.join(folder, "*.csv"))
+    return sibs[0] if len(sibs) == 1 else None
+
+
 def list_models():
-    """列出「.onnx + 能找到对应词表」的模型"""
+    """→ {显示名: {"kind": "onnx"|"timm", "path", "vocab", "config"}}
+
+    两轮扫描：**先注册所有 ONNX，再注册 timm**。
+    这样同名模型（既导出了 ONNX、又放了 safetensors）时，
+    ONNX 占用原名，timm 版显示为 "<名字> (timm)"，两者都能选。
+    """
     found = {}
-    for d in search_dirs():
+    dirs = search_dirs()
+
+    for d in dirs:                                    # 第一轮：ONNX
         for onnx in sorted(glob.glob(os.path.join(d, "*.onnx"))):
             stem = os.path.splitext(os.path.basename(onnx))[0]
-            if vocab_path(onnx):
-                found.setdefault(stem, onnx)
+            v = vocab_path(onnx)
+            if v:
+                found.setdefault(stem, {"kind": "onnx", "path": onnx, "vocab": v, "config": None})
+
+    for d in dirs:                                    # 第二轮：timm / safetensors
+        # 社区模型：<名字>/model.safetensors + config.json + selected_tags.csv
+        for sd in sorted(glob.glob(os.path.join(d, "*", "model.safetensors"))):
+            folder = os.path.dirname(sd)
+            cfg = os.path.join(folder, "config.json")
+            v = folder_vocab(folder)
+            if os.path.exists(cfg) and v:
+                _add_timm(found, os.path.basename(folder), sd, cfg, v)
+        # 散放的 safetensors + config.json（同一目录）
+        for sd in sorted(glob.glob(os.path.join(d, "*.safetensors"))):
+            folder = os.path.dirname(sd)
+            cfg = os.path.join(folder, "config.json")
+            v = vocab_path(sd)
+            if os.path.exists(cfg) and v:
+                _add_timm(found, os.path.splitext(os.path.basename(sd))[0], sd, cfg, v)
     return found
 
 
-def model_dir():
-    """自动下载的落地目录"""
-    d = os.path.join(_MODELS_ROOT, "wd14_tagger")
-    os.makedirs(d, exist_ok=True)
-    return d
+def _add_timm(found, name, weights, config, vocab):
+    """同名模型已有 ONNX 版时，timm 版显示成 "<名字> (timm)"，避免互相覆盖"""
+    key = f"{name} (timm)" if name in found else name
+    found.setdefault(key, {"kind": "timm", "path": weights, "vocab": vocab, "config": config})
 
 
-# ---------------------------------------------------------------- 设备 / 会话
+# ---------------------------------------------------------------- 设备 / 缓存
 _DLL_READY = False
 #: os.add_dll_directory 返回的句柄必须一直持有！否则对象被垃圾回收后，
-#: 该目录会从 DLL 搜索路径里消失 → CUDA 会间歇性地加载失败、静默退回 CPU。
+#: 该目录会从 DLL 搜索路径里消失 → CUDA 会间歇性加载失败、静默退回 CPU。
 _DLL_HANDLES = []
 _SESSIONS = {}
+_TIMM = {}
 _CSVS = {}
 _LOCK = threading.Lock()
 
 
 def _prepare_dll_paths():
-    """尽力让 onnxruntime 找到 CUDA 运行库（nvidia-* pip 包 / torch/lib）"""
     global _DLL_READY
     if _DLL_READY:
         return
@@ -119,8 +172,6 @@ def _prepare_dll_paths():
             cands += glob.glob(os.path.join(sp, "nvidia", "*", "lib"))
     except Exception:
         pass
-    # 插件自带的 CUDA 12 运行库（onnxruntime-gpu 的 CUDA EP 需要 CUDA 12，而便携包里的
-    # torch 往往带的是 CUDA 13，文件名不同 → 加载失败 → 静默退回 CPU）
     cands += glob.glob(os.path.join(_PACK, "cuda12", "nvidia", "*", "bin"))
     cands += glob.glob(os.path.join(_PACK, "cuda12", "nvidia", "*", "lib"))
     for d in cands:
@@ -154,38 +205,122 @@ def get_session(onnx_path, providers):
     import onnxruntime as ort
     so = ort.SessionOptions()
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    if os.environ.get("TAGGERPLUS_ORT_VERBOSE"):
-        so.log_severity_level = 1
     sess = ort.InferenceSession(onnx_path, sess_options=so, providers=list(providers))
     with _LOCK:
         _SESSIONS[key] = sess
     return sess
 
 
+def _torch_device(pref):
+    import torch
+    if pref == "cpu":
+        return torch.device("cpu")
+    try:
+        import comfy.model_management as mm
+        return mm.get_torch_device()
+    except Exception:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class TimmModel:
+    """社区模型：timm 架构 + safetensors 权重（免导出 ONNX）"""
+
+    def __init__(self, weights, config, device_pref, color_order="bgr", preprocess="pad"):
+        import timm
+        from safetensors.torch import load_file
+
+        self.color_order = "bgr" if color_order in ("auto", "", None) else color_order
+        self.preprocess = "pad" if preprocess in ("auto", "", None) else preprocess
+
+        cfg = json.load(open(config, encoding="utf-8"))
+        arch = cfg["architecture"]
+        ncls = int(cfg["num_classes"])
+        pc = cfg.get("pretrained_cfg", {}) or {}
+        self.mean = pc.get("mean", [0.5, 0.5, 0.5])
+        self.std = pc.get("std", [0.5, 0.5, 0.5])
+        isz = pc.get("input_size", [3, 448, 448])
+        self.size = int(isz[-1])
+        self.crop_pct = float(pc.get("crop_pct", 1.0) or 1.0)
+        self.interp = str(pc.get("interpolation", "bicubic"))
+        self.device = _torch_device(device_pref)
+
+        _log(f"[TaggerPlus/WD14] 加载社区模型（timm）{arch} · {ncls} 类 · "
+             f"{self.size}px · {self.interp} · {self.device}…")
+        model = timm.create_model(arch, pretrained=False, num_classes=ncls)
+        model.load_state_dict(load_file(weights), strict=True)
+        model.to(self.device).eval()
+        self.model = model
+        self.ncls = ncls
+
+    def probs(self, pil):
+        import torch
+        from torchvision.transforms import functional as TF
+
+        s = self.size
+        mode = {"bicubic": Image.BICUBIC, "bilinear": Image.BILINEAR,
+                "nearest": Image.NEAREST}.get(self.interp, Image.BICUBIC)
+        w, h = pil.size
+        if self.preprocess == "crop":
+            # ImageNet 风格：短边缩放到 size 再中心裁剪（会裁掉头/脚，仅给特定模型用）
+            scale = s / min(w, h)
+            nw, nh = max(s, round(w * scale)), max(s, round(h * scale))
+            img = pil.resize((nw, nh), mode)
+            left, top = (nw - s) // 2, (nh - s) // 2
+            img = img.crop((left, top, left + s, top + s))
+        else:
+            # ★ WD 标签器约定：长边缩放到 size，再补白边成正方形（保留整张图，
+            #   角色标签依赖头部特征，裁剪会丢 blue_eyes / blue_halo 这类标签）
+            scale = s / max(w, h)
+            nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+            img = pil.resize((nw, nh), mode)
+            canvas = Image.new("RGB", (s, s), (255, 255, 255))
+            canvas.paste(img, ((s - nw) // 2, (s - nh) // 2))
+            img = canvas
+        t = TF.to_tensor(img)
+        # ★ WD 系列（含从 wd-eva02-large-tagger-v3 微调的社区模型）用 BGR 通道序，
+        #   参考实现 neggles/wdv3-timm 也是先 RGB→BGR 再归一化。
+        #   实测：喂 RGB 会把金发认成 blue_hair、把蓝眼认成 blue_skin。
+        if self.color_order == "bgr":
+            t = t.flip(0)
+        t = TF.normalize(t, mean=self.mean, std=self.std)
+        with torch.inference_mode():
+            return self.model(t.unsqueeze(0).to(self.device)).sigmoid()[0]
+
+
+def get_timm(weights, config, device_pref, color_order="bgr", preprocess="pad"):
+    key = (weights, config, device_pref, color_order, preprocess)
+    with _LOCK:
+        if key in _TIMM:
+            return _TIMM[key]
+    m = TimmModel(weights, config, device_pref, color_order, preprocess)
+    with _LOCK:
+        _TIMM[key] = m
+    return m
+
+
 def load_vocab(csv_path, replace_underscore):
-    """词表只解析一次；返回 (tags, general_index, character_index)"""
     key = (csv_path, bool(replace_underscore))
     with _LOCK:
         if key in _CSVS:
             return _CSVS[key]
-    tags, general_index, character_index = [], None, None
+    tags, gi, ci = [], None, None
     with open(csv_path, encoding="utf-8") as f:
         reader = csv.reader(f)
         next(reader, None)
         for row in reader:
             if len(row) < 3:
                 continue
-            if general_index is None and row[2] == "0":
-                general_index = reader.line_num - 2
-            elif character_index is None and row[2] == "4":
-                character_index = reader.line_num - 2
+            if gi is None and row[2] == "0":
+                gi = reader.line_num - 2
+            elif ci is None and row[2] == "4":
+                ci = reader.line_num - 2
             tags.append(row[1].replace("_", " ") if replace_underscore else row[1])
-    if general_index is None:
-        general_index = 0
-    if character_index is None:
-        character_index = len(tags)
+    if gi is None:
+        gi = 0
+    if ci is None:
+        ci = len(tags)
     with _LOCK:
-        _CSVS[key] = (tags, general_index, character_index)
+        _CSVS[key] = (tags, gi, ci)
     return _CSVS[key]
 
 
@@ -199,7 +334,6 @@ CUDA12_HINT = (
     "        nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 nvidia-curand-cu12\n"
     "  装完重启 ComfyUI，device 输出会变成 GPU · <显卡名>。\n"
 )
-
 
 CUDA12_HINT_ASCII = (
     "\n[TaggerPlus] CUDA provider failed to load; falling back to CPU.\n"
@@ -228,20 +362,6 @@ def device_label(sess, requested):
     return "CPU"
 
 
-
-def _log(msg, ascii_fallback=None):
-    """安全打印：Windows GBK 控制台打印中文/⚠ 会抛 UnicodeEncodeError，
-    这里兜底成 ASCII，保证日志永远不会让节点崩掉。"""
-    try:
-        print(msg, flush=True)
-    except UnicodeEncodeError:
-        try:
-            print(ascii_fallback if ascii_fallback is not None
-                  else msg.encode("ascii", "replace").decode("ascii"), flush=True)
-        except Exception:
-            pass
-
-# ---------------------------------------------------------------- 节点
 class WD14TaggerPlus:
     @classmethod
     def INPUT_TYPES(cls):
@@ -251,10 +371,13 @@ class WD14TaggerPlus:
             "required": {
                 "image": ("IMAGE",),
                 "model": (models or ["（没有可用模型）"], {"tooltip":
-                    "已装模型直接选；带 ⬇ 的条目会在首次使用时**自动下载**（优先官方，失败切国内镜像）\n"
+                    "两种格式自动识别、无需转换：\n"
+                    "  • ONNX（.onnx + 词表 csv）—— 自动适配 NHWC / NCHW 布局\n"
+                    "  • safetensors + timm（<模型名>/model.safetensors + config.json）—— 社区新模型\n"
+                    "带 ⬇ 的条目会在首次使用时自动下载（优先官方，失败切国内镜像）\n"
                     "扫描目录：\n" + "\n".join(dirs)}),
                 "threshold": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01,
-                                        "tooltip": "通用标签阈值（原版默认 0.35）"}),
+                                        "tooltip": "通用标签阈值（原版默认 0.35；部分社区模型建议更高，如 canary 官方建议 0.61）"}),
                 "character_threshold": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01,
                                                   "tooltip": "角色标签阈值（原版默认 0.85；做对比建议和对方对齐）"}),
                 "device": (["auto", "cuda", "cpu"], {"default": "auto",
@@ -270,6 +393,12 @@ class WD14TaggerPlus:
                 "trailing_comma": ("BOOLEAN", {"default": False}),
                 "exclude_tags": ("STRING", {"default": "", "multiline": False,
                                             "tooltip": "要排除的标签，逗号分隔（大小写不敏感）"}),
+                "preprocess": (["auto", "pad", "crop"], {"default": "auto",
+                    "tooltip": "社区模型的构图方式。auto/pad = 缩放到长边+补白边（保留整张图，推荐）；"
+                               "crop = 短边缩放后中心裁剪（ImageNet 风格，会裁掉头/脚）"}),
+                "color_order": (["auto", "bgr", "rgb"], {"default": "auto",
+                    "tooltip": "通道顺序。auto = BGR（WD 系列及其微调模型的约定）；"
+                               "若某模型输出的颜色类标签明显不对（如把金发认成 blue_hair），可试 rgb"}),
             },
         }
 
@@ -277,42 +406,38 @@ class WD14TaggerPlus:
     RETURN_NAMES = ("tags", "device")
     FUNCTION = "tag"
     CATEGORY = "TaggerPlus"
-    DESCRIPTION = "WD 系列反推（onnxruntime）：会话缓存 + 明确的设备回报，速度比原版快约 30 倍"
+    DESCRIPTION = ("WD 系列反推：ONNX（自动适配 NHWC/NCHW）与 safetensors/timm 社区模型都支持；"
+                   "会话缓存 + 明确的设备回报，速度比原版快约 30 倍")
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
-        return float("nan")          # 图变了就必须重算；会话缓存在本节点内部
+        return float("nan")          # 始终重新执行（缓存交给本节点自己管）
 
+    # ------------------------------------------------------------------
     def tag(self, image, model, threshold, character_threshold, device="auto",
             replace_underscore=False, escape_parens=False, sort_by_confidence=False,
-            trailing_comma=False, exclude_tags=""):
+            trailing_comma=False, exclude_tags="", color_order="auto", preprocess="auto"):
+
         name, need_dl = fetch.parse_selection(model)
+        real = name[:-len(" (timm)")] if name.endswith(" (timm)") else name
         if need_dl:
-            if not fetch.fetch("wd14", name, model_dir()):
+            spec = fetch.KNOWN["wd14"].get(name) or fetch.KNOWN["wd14"].get(real)
+            dest = os.path.join(model_dir(), name) if (spec and spec[4]) else model_dir()
+            if not fetch.fetch("wd14", name, dest):
                 raise RuntimeError(
-                    f"自动下载 {name} 失败。可手动下载后放进 {model_dir()}，"
+                    f"自动下载 {name} 失败。可手动下载后放进 {dest}，"
                     "或设置环境变量 TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com，"
                     "或先在 ComfyUI 控制台看具体报错。")
+
         table = list_models()
+        if name not in table and real in table:
+            name = real
         if name not in table:
             raise ValueError(
                 f"找不到模型 {name!r}。已扫描目录：\n  " + "\n  ".join(search_dirs()) +
-                "\n请把 .onnx 与词表 csv 放进 models/wd14_tagger/（或在插件的 taggerplus_dirs.json 里加目录）")
-        onnx_path = table[name]
-        csv_path = vocab_path(onnx_path)
-
-        providers = pick_providers(device)
-        cached = (onnx_path, tuple(providers)) in _SESSIONS
-        if not cached:
-            _log(f"[TaggerPlus/WD14] 正在加载 {name} 并创建 ONNX 会话…"
-                 f"（首次或换设备后可能 10~50 秒，之后会缓存复用）")
-        sess = get_session(onnx_path, providers)
-        label = device_label(sess, providers)
-
-        inp = sess.get_inputs()[0]
-        height = inp.shape[1]
-        out_name = sess.get_outputs()[0].name
-        tags, gi, ci = load_vocab(csv_path, replace_underscore)
+                "\n支持：① .onnx + 词表 csv  ② <名字>/model.safetensors + config.json + selected_tags.csv")
+        entry = table[name]
+        tags, gi, ci = load_vocab(entry["vocab"], replace_underscore)
 
         excl = set()
         for x in (s.strip() for s in exclude_tags.split(",")):
@@ -321,6 +446,41 @@ class WD14TaggerPlus:
                 excl.add(x.replace("_", " ").lower())
                 excl.add(x.replace(" ", "_").lower())
 
+        # ---------------- safetensors / timm（社区模型）----------------
+        if entry["kind"] == "timm":
+            import torch
+            m = get_timm(entry["path"], entry["config"], device, color_order, preprocess)
+            label = f"GPU · {torch.cuda.get_device_name(0)}" if m.device.type == "cuda" else "CPU"
+            results = []
+            for i in range(image.shape[0]):
+                arr = (image[i].cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+                pil = Image.fromarray(arr)
+                if pil.mode != "RGB":
+                    pil = pil.convert("RGB")
+                probs = m.probs(pil).float().cpu().numpy()
+                results.append(self._format(probs, tags, gi, ci, threshold, character_threshold,
+                                            excl, escape_parens, sort_by_confidence, trailing_comma))
+            _log(f"[TaggerPlus/WD14] {name}（timm/safetensors）| device: {label} | {len(results)} image(s)")
+            return (results if len(results) > 1 else results[0], label)
+
+        # ---------------- ONNX ----------------
+        providers = pick_providers(device)
+        if (entry["path"], tuple(providers)) not in _SESSIONS:
+            _log(f"[TaggerPlus/WD14] 正在加载 {name} 并创建 ONNX 会话…"
+                 f"（首次或换设备后可能 10~50 秒，之后会缓存复用）")
+        sess = get_session(entry["path"], providers)
+        label = device_label(sess, providers)
+
+        inp = sess.get_inputs()[0]
+        shape = inp.shape
+        if len(shape) == 4 and shape[-1] == 3:
+            layout, size = "NHWC", int(shape[1])
+        elif len(shape) == 4 and shape[1] == 3:
+            layout, size = "NCHW", int(shape[2])
+        else:
+            raise ValueError(f"无法识别的输入形状 {shape}（期望 [1,H,W,3] 或 [1,3,H,W]）")
+        out_name = sess.get_outputs()[0].name
+
         results = []
         for i in range(image.shape[0]):
             arr = (image[i].cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
@@ -328,25 +488,35 @@ class WD14TaggerPlus:
             if pil.mode != "RGB":
                 pil = pil.convert("RGB")
             w, h = pil.size
-            ratio = float(height) / max(w, h)
+            ratio = float(size) / max(w, h)
             new = (max(1, int(w * ratio)), max(1, int(h * ratio)))
             pil = pil.resize(new, Image.LANCZOS)
-            square = Image.new("RGB", (height, height), (255, 255, 255))
-            square.paste(pil, ((height - new[0]) // 2, (height - new[1]) // 2))
-            x = np.asarray(square).astype(np.float32)[:, :, ::-1]      # RGB -> BGR
+            square = Image.new("RGB", (size, size), (255, 255, 255))
+            square.paste(pil, ((size - new[0]) // 2, (size - new[1]) // 2))
+            x = np.asarray(square).astype(np.float32)[:, :, ::-1]      # RGB -> BGR（WD 系列约定）
+            if layout == "NCHW":
+                x = np.transpose(x, (2, 0, 1))                          # ★ 自动适配 NCHW
             probs = sess.run([out_name], {inp.name: np.expand_dims(x, 0)})[0][0]
+            if probs.max() > 1.0001:                                    # 导出里没带 sigmoid
+                probs = 1.0 / (1.0 + np.exp(-probs))
+            results.append(self._format(probs, tags, gi, ci, threshold, character_threshold,
+                                        excl, escape_parens, sort_by_confidence, trailing_comma))
 
-            gen = [(tags[j], float(probs[j])) for j in range(gi, ci) if probs[j] > threshold]
-            ch = [(tags[j], float(probs[j])) for j in range(ci, len(tags)) if probs[j] > character_threshold]
-            picked = ch + gen
-            if sort_by_confidence:
-                picked = sorted(picked, key=lambda t: -t[1])
-            picked = [t for t, _ in picked if t.lower() not in excl]
-            if escape_parens:
-                picked = [t.replace("(", "\\(").replace(")", "\\)") for t in picked]
-            sep = ", " if trailing_comma else ", "
-            s = (", ".join(picked) + ("," if trailing_comma and picked else ""))
-            results.append(s)
-
-        _log(f"[TaggerPlus/WD14] {name} | device: {label} | {len(results)} image(s)")
+        _log(f"[TaggerPlus/WD14] {name}（onnx·{layout}）| device: {label} | {len(results)} image(s)")
         return (results if len(results) > 1 else results[0], label)
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _format(probs, tags, gi, ci, threshold, character_threshold,
+                excl, escape_parens, sort_by_confidence, trailing_comma):
+        n = min(len(probs), len(tags))
+        gen = [(tags[j], float(probs[j])) for j in range(min(gi, n), min(ci, n)) if probs[j] > threshold]
+        ch = [(tags[j], float(probs[j])) for j in range(min(ci, n), n) if probs[j] > character_threshold]
+        picked = ch + gen
+        if sort_by_confidence:
+            picked = sorted(picked, key=lambda t: -t[1])
+        out = [t for t, _ in picked
+               if t.lower() not in excl and t.replace("_", " ").lower() not in excl]
+        if escape_parens:
+            out = [t.replace("(", "\\(").replace(")", "\\)") for t in out]
+        return ", ".join(out) + ("," if trailing_comma and out else "")
