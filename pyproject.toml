@@ -1,0 +1,21 @@
+[project]
+name = "comfyui-taggerplus"
+version = "0.1.0"
+description = "Fixed WD14 / PixAI tagger nodes for ComfyUI: cached ONNX sessions, visible device reporting, dropdown model selection"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "onnxruntime-gpu>=1.17",
+    "safetensors>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/<you>/ComfyUI-TaggerPlus"
+Repository = "https://github.com/<you>/ComfyUI-TaggerPlus"
+Issues = "https://github.com/<you>/ComfyUI-TaggerPlus/issues"
+
+[tool.comfy]
+PublisherId = "your-publisher-id"
+DisplayName = "TaggerPlus"
+Icon = ""

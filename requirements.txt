@@ -1,0 +1,8 @@
+# ComfyUI-TaggerPlus 依赖
+# torch / torchvision / transformers / pillow / numpy 由 ComfyUI 自带，无需重复安装
+#
+# ONNX Runtime：
+#   GPU  → onnxruntime-gpu（注意：CUDA provider 需要 CUDA 12 运行库，见 README）
+#   CPU  → onnxruntime
+onnxruntime-gpu>=1.17
+safetensors>=0.4

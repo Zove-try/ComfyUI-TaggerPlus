@@ -1,0 +1,6 @@
+﻿__pycache__/
+*.py[cod]
+taggerplus_dirs.json
+models/
+.venv/
+.DS_Store
