@@ -10,12 +10,12 @@ ComfyUI 的 WD14 / PixAI 图像反推节点，解决了原版节点在性能与�
 
 ## 与原版节点的主要差别
 
-| 项目 | 原版 | 本插件 |
-|---|---|---|
-| **WD14 速度** | `ComfyUI-WD14-Tagger` 每次执行都重新创建 `InferenceSession`（重新加载 1.2 GB 模型） | 会话与词表只加载一次 |
-| **设备可见性** | CUDA provider 加载失败时静默退回 CPU；日志只打印「请求的 provider」，不打印「实际生效的 provider」 | `device` 输出直接给出实际设备：`GPU · RTX 5060 Ti` 或 `CPU ⚠ …` |
-| **PixAI 模型加载** | `model_file` / `config_file` 为文本框，需填绝对路径 | 从 `ComfyUI/models/pixai_tagger/` 自动扫描，下拉选择 |
-| **社区模型** | 仅支持 NHWC 布局的 ONNX | 支持 ONNX（自动适配 NHWC / NCHW）与 safetensors + timm，无需导出转换 |
+| 项目 | 影响范围 | 原版 | 本插件 |
+|---|---|---|---|
+| **会话重建** | 所有环境 | `ComfyUI-WD14-Tagger` 每次执行都重新创建 `InferenceSession`（重新加载 1.2 GB 模型） | 会话与词表只加载一次 |
+| **静默退回 CPU** | 仅部分环境（见下） | CUDA provider 加载失败时不报错，直接改用 CPU 推理；日志只打印「请求的 provider」，不打印「实际生效的 provider」 | `device` 输出直接给出实际设备：`GPU · RTX 5060 Ti` 或 `CPU ⚠ …` |
+| **PixAI 模型加载** | 所有环境 | `model_file` / `config_file` 为文本框，需填绝对路径 | 从 `ComfyUI/models/pixai_tagger/` 自动扫描，下拉选择 |
+| **社区模型** | 所有环境 | 仅支持 NHWC 布局的 ONNX | 支持 ONNX（自动适配 NHWC / NCHW）与 safetensors + timm，无需导出转换 |
 
 ## 安装
 
@@ -197,9 +197,11 @@ ComfyUI/models/pixai_tagger/pixai-tagger-v1.0/
 
 文件名保持原样即可：插件同时识别 `<模型名>.csv` 与 `selected_tags.csv`。若希望下拉中显示更清晰，可将 `model.onnx` 改名为 `wd-eva02-large-tagger-v3.onnx`（此时词表需改名为 `wd-eva02-large-tagger-v3.csv`）。
 
-### CUDA 运行库（可选）
+### CUDA 运行库（可选，仅部分环境需要）
 
-`onnxruntime-gpu` 的 CUDA provider 需要 CUDA 12 运行库（`cublasLt64_12.dll`），而 ComfyUI 便携包中的 torch 通常为 CUDA 13（`cublasLt64_13.dll`），文件名不匹配时 CUDA provider 加载失败并退回 CPU。
+只有当环境中找不到 CUDA 12 运行库时才需要安装（详见上文
+[原因二](#原因二cuda-provider-加载失败后静默退回-cpu--仅部分环境存在)）。
+若 torch 为 CUDA 12 构建（cu121 / cu124 / cu126），原版节点本身就能使用 GPU，此处无需任何操作。
 
 先运行一次节点，查看 `device` 输出：
 
@@ -254,30 +256,60 @@ ComfyUI/
 
 ## 性能
 
-### 原版节点的耗时构成
+### 原版节点慢的两个原因（影响范围不同）
 
-原版节点处理三张不同图片的实测耗时为 `16.50s / 16.47s / 16.21s`，三者几乎相同，说明每次都在支付固定的重复成本。分项如下：
+**原因一：每次执行都重建 ONNX 会话 —— 所有环境都存在**
 
-| 环节 | 耗时 | 原因 |
+这是代码层面的固定行为：`InferenceSession()` 被写在 `tag()` 内部，每次执行都会重新加载模型并做图优化。
+
+| 环节 | 耗时 | 说明 |
 |---|---|---|
 | 磁盘顺序读取 1.2 GB 模型 | 0.55 s | 无影响（2,199 MB/s） |
 | 解析 10,861 行词表 | 0.01 s | 无影响 |
-| **创建 ONNX 会话** | 3 – 6 s | 原版每次执行都重建 |
-| **推理（448²）** | CPU 约 1.6 s / GPU 约 0.1 s | 取决于 provider |
+| **创建 ONNX 会话** | 3 – 6 s | 每张图都重复一次 |
 
-其中影响最大的一项是 CUDA provider 的静默降级：ORT 仅在 stderr 输出一行警告，节点日志中不可见。
+**原因二：CUDA provider 加载失败后静默退回 CPU —— 仅部分环境存在**
 
-### 实测对比（RTX 5060 Ti）
+`onnxruntime-gpu` 的 CUDA provider 需要 CUDA 12 运行库（`cublasLt64_12.dll`）。
+当环境中找不到它时，ORT 不会报错，而是改用 CPU 推理，仅在 stderr 输出一行警告。
+常见触发情况：
+
+| 环境 | 是否受影响 |
+|---|---|
+| ComfyUI 便携包的 torch 为 **CUDA 13** 构建（自带 `cublasLt64_13.dll`，文件名不匹配） | **受影响**，退回 CPU |
+| 系统未安装 CUDA 12 运行库，也未安装 `nvidia-*-cu12` | **受影响**，退回 CPU |
+| torch 为 **CUDA 12** 构建（cu121 / cu124 / cu126），`torch/lib` 中已有 `cublasLt64_12.dll` | 不受影响，正常使用 GPU |
+| 已安装 `nvidia-*-cu12` 或系统级 CUDA 12 | 不受影响，正常使用 GPU |
+
+因此「WD14 很慢」并非普遍现象：**CUDA 12 环境下的用户不会遇到第二个问题**，
+他们受到的影响只有每张图 3 – 6 秒的会话重建开销。
+
+本插件对两类情况的处理：
+
+| 问题 | 处理方式 |
+|---|---|
+| 会话重建 | 会话按 (模型, provider) 缓存，词表只解析一次 |
+| 静默退回 CPU | `device` 输出显示实际设备；自动扫描 CUDA 12 运行库（`nvidia-*-cu12` / `torch/lib` / `<插件>/cuda12/`）；提供离线包与安装脚本 |
+
+本机实测（torch 2.9.1+cu130，即上述「受影响」环境）原版节点处理三张不同图片为
+`16.50s / 16.47s / 16.21s`，三者几乎相同 —— 固定成本每张都在重复支付。
+
+### 实测对比
+
+测试环境：RTX 5060 Ti，torch 2.9.1+cu130（缺少 CUDA 12 运行库，即原版节点会退回 CPU 的环境）。
 
 | | 原版节点 | TaggerPlus |
 |---|---|---|
-| WD14 首次 | 16.50 s | 冷启动 10–50 s（加载 CUDA 运行库并创建会话，每个进程一次） |
-| WD14 之后每张 | 16.47 s | **0.09 – 0.20 s**（GPU）/ 约 1.6 s（CPU） |
+| WD14 首次 | 16.50 s | 冷启动 10–50 s（加载 CUDA 12 运行库并创建会话，每个进程一次） |
+| WD14 之后每张 | 16.47 s（CPU 推理 + 每张重建会话） | **0.09 – 0.20 s**（GPU）/ 约 1.6 s（仅缓存会话、仍为 CPU） |
 | PixAI 首次 | 5.92 s | 3.7 s |
 | PixAI 之后每张 | 0.61 s | **0.55 s** |
 | 社区模型（canary，320M） | 不支持 | 0.20 – 0.22 s |
 
 93 张图仅导出标签：约 25 分钟 → 约 1 分钟。
+
+> 在 CUDA 12 环境中（原版节点本来就能用 GPU），预期收益为省去每张图 3 – 6 秒的会话重建开销；
+> 本表未包含该环境的实测数据。
 
 ## 兼容性
 
@@ -304,7 +336,9 @@ ComfyUI/
 Two fixed tagger nodes for ComfyUI.
 
 - **WD14 Tagger Plus** — upstream `ComfyUI-WD14-Tagger` rebuilds the ONNX `InferenceSession` on every
-  execution (1.2 GB reload) and silently falls back to CPU when the CUDA provider fails to load.
+  execution (1.2 GB reload) in all environments, and additionally falls back to CPU without any error
+  in environments where the CUDA provider cannot load (typically a CUDA 13 torch build, since
+  `onnxruntime-gpu` requires the CUDA 12 runtime).
   This node caches the session and vocabulary, and reports the device actually used as an output.
   It accepts both ONNX (auto-adapting NHWC / NCHW) and safetensors + timm community models.
 - **PixAI Tagger Plus** — upstream requires absolute model paths. This node scans
@@ -323,7 +357,7 @@ with attribution.
 <details>
 <summary><b>不安装 CUDA 运行库会怎样？</b></summary>
 
-功能不受影响，仅速度下降：
+仅当环境缺少 CUDA 12 运行库时才会退回 CPU。此时功能不受影响，只是速度下降：
 
 | | 第 1 张 | 第 2 张 | 第 3 张 | 标签结果 |
 |---|---|---|---|---|
