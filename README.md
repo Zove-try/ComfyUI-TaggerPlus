@@ -216,7 +216,7 @@ ComfyUI/models/pixai_tagger/pixai-tagger-v1.0/
 2. `torch/lib` —— 若 torch 为 CUDA 12 版本（cu121 / cu124 / cu126），此处已包含所需 DLL
 3. `<插件目录>/cuda12/` —— 下述两种方式的安装位置
 
-#### 方式 A：离线包（夸克网盘）
+#### 方式 A：离线包
 
 > 下载地址：https://pan.quark.cn/s/77632a836e96
 > 文件名：`ComfyUI-TaggerPlus_CUDA12运行库_Windows.zip`
@@ -344,9 +344,9 @@ Two fixed tagger nodes for ComfyUI.
 - **PixAI Tagger Plus** — upstream requires absolute model paths. This node scans
   `ComfyUI/models/pixai_tagger/` and provides a dropdown.
 
-Windows users who need the CUDA 12 runtime can use the offline package (787 MB) from
-[Quark Drive](https://pan.quark.cn/s/77632a836e96) and unzip its `cuda12/` folder into the plugin
-directory; Linux/macOS users can run `install_cuda12.sh`.
+Windows users whose environment lacks the CUDA 12 runtime can use the offline package linked in the
+CUDA runtime section above (unzip its `cuda12/` folder into the plugin directory); Linux/macOS users
+can run `install_cuda12.sh`.
 
 Outputs are identical to the upstream nodes (verified label by label). MIT licensed; the PixAI
 architecture code is vendored from [sln77/ComfyUI-Tagger](https://github.com/sln77/ComfyUI-Tagger)
