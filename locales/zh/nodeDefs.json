@@ -6,7 +6,7 @@
       "image": { "name": "图像" },
       "model": {
         "name": "模型",
-        "tooltip": "两种格式自动识别、无需转换：\n  - ONNX（.onnx + 词表 csv）：自动适配 NHWC / NCHW 布局\n  - safetensors + timm（<模型名>/model.safetensors + config.json）：社区模型\n带下载箭头 ⬇ 的条目会在首次使用时自动下载（优先官方源，失败切国内镜像）。"
+        "tooltip": "两种格式自动识别、无需转换：\n  - ONNX（.onnx + 词表 csv）：自动适配 NHWC / NCHW 布局\n  - safetensors + timm（<模型名>/model.safetensors + config.json）：社区模型\n带下载箭头 ⬇ 的条目会在首次使用时自动下载（优先官方源，失败切国内镜像）。已下载过的模型也可以保持选中这一条，会直接使用本地文件，不会重复下载。"
       },
       "threshold": {
         "name": "通用标签阈值",

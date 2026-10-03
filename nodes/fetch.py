@@ -182,6 +182,13 @@ def fetch(kind, name, dest_dir, max_bytes=None):
         return False
     repo, files, size, _note, _sub = spec
     os.makedirs(dest_dir, exist_ok=True)
+
+    # 快速路径：文件都在本地就直接用，不联网（选中已下载条目时走这里）
+    targets = [os.path.join(dest_dir, tpl.format(name=name)) for _remote, tpl in files]
+    if not max_bytes and all(os.path.exists(x) for x in targets):
+        _log(f"{TAG} {name} 已在本地，直接使用 → {dest_dir}")
+        return True
+
     eps = endpoints()
     _log(f"{TAG} 需要下载模型 {name}（{size}），共 {len(files)} 个文件，"
          f"依次尝试 {len(eps)} 个下载源")
@@ -210,10 +217,16 @@ def fetch(kind, name, dest_dir, max_bytes=None):
 
 
 def combo_entries(kind, installed):
+    """下拉条目。
+
+    ★ 带下载箭头的条目**始终列出**，即使模型已经下载过。
+      原因：工作流把下拉的值按字符串保存。如果下载后该条目消失，
+      存档里的值就不再属于选项列表，ComfyUI 校验时会报
+      "Value not in list"，用户必须手动重选一次。
+      保留条目后，选它的行为退化为"直接用本地文件"，值永远有效。
+    """
     out = list(installed)
     for name, (repo, files, size, note, _sub) in KNOWN.get(kind, {}).items():
-        if name in installed or f"{name} (timm)" in installed:
-            continue
         out.append(f"{MARK}{name}{SEP}{size}")
     return out
 

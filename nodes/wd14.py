@@ -430,7 +430,10 @@ class WD14TaggerPlus:
                     "或先在 ComfyUI 控制台看具体报错。")
 
         table = list_models()
-        if name not in table and real in table:
+        # 刚下载社区模型（timm）时，若同名 ONNX 也存在，优先用刚下载的那个后端
+        if need_dl and f"{name} (timm)" in table:
+            name = f"{name} (timm)"
+        elif name not in table and real in table:
             name = real
         if name not in table:
             raise ValueError(
