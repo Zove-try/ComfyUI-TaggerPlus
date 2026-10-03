@@ -55,7 +55,7 @@ def search_dirs():
             for d in json.load(open(cfg, encoding="utf-8")).get("pixai_tagger", []):
                 dirs.append(os.path.expanduser(d))
         except Exception as e:
-            print(f"[TaggerPlus] 读取 taggerplus_dirs.json 失败: {e}")
+            _log(f"[TaggerPlus] 读取 taggerplus_dirs.json 失败: {e}")
     seen, out = set(), []
     for d in dirs:
         d = os.path.abspath(d)
@@ -139,19 +139,32 @@ def get_loaded(model_path, config_path, device_pref):
     else:
         best = torch.full([len(tags)], 0.2, dtype=torch.float32, device=device)
 
-    print(f"[TaggerPlus/PixAI] 加载权重 {os.path.basename(model_path)} → {device} …")
+    _log(f"[TaggerPlus/PixAI] loading {os.path.basename(model_path)} -> {device} ...")
     model = ViTDetCls(cfg)
     sd = (load_safetensors(model_path, device="cpu") if model_path.endswith(".safetensors")
           else torch.load(model_path, map_location="cpu", weights_only=True))
     model.load_state_dict(sd)
     model.to(device)
     model.eval()
-    print(f"[TaggerPlus/PixAI] 就绪：{len(tags)} 个标签 / {len(split)} 个类别 · 设备 {device}")
+    _log(f"[TaggerPlus/PixAI] ready: {len(tags)} tags / {len(split)} categories on {device}")
     obj = _Loaded(model, cfg, tags, split, best, device)
     with _LOCK:
         _CACHE[key] = obj
     return obj
 
+
+
+def _log(msg, ascii_fallback=None):
+    """安全打印：Windows GBK 控制台打印中文/⚠ 会抛 UnicodeEncodeError，
+    这里兜底成 ASCII，保证日志永远不会让节点崩掉。"""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            print(ascii_fallback if ascii_fallback is not None
+                  else msg.encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
 
 class PixAITaggerPlus:
     @classmethod
@@ -273,7 +286,7 @@ class PixAITaggerPlus:
             combined += fm
         if include_rating:
             combined += fr
-        print(f"[TaggerPlus/PixAI] {os.path.basename(model_path)} | 设备 {dev_label} | "
-              f"角色 {len(fc)} 系列 {len(fp)} 通用 {len(fg)} 画风 {len(fs)}")
+        _log(f"[TaggerPlus/PixAI] {os.path.basename(model_path)} | {dev_label} | "
+             f"character {len(fc)} copyright {len(fp)} general {len(fg)} style {len(fs)}")
         return (", ".join(combined), ", ".join(fc), ", ".join(fp), ", ".join(fg),
                 ", ".join(fs), ", ".join(fm), ", ".join(fr), dev_label)

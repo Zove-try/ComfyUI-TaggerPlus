@@ -51,7 +51,7 @@ def search_dirs():
             for d in json.load(open(cfg, encoding="utf-8")).get("wd14_tagger", []):
                 dirs.append(os.path.expanduser(d))
         except Exception as e:
-            print(f"[TaggerPlus] 读取 taggerplus_dirs.json 失败: {e}")
+            _log(f"[TaggerPlus] 读取 taggerplus_dirs.json 失败: {e}")
     seen, out = set(), []
     for d in dirs:
         d = os.path.abspath(d)
@@ -178,6 +178,17 @@ CUDA12_HINT = (
 )
 
 
+CUDA12_HINT_ASCII = (
+    "\n[TaggerPlus] CUDA provider failed to load; falling back to CPU.\n"
+    "  Cause: onnxruntime-gpu needs the CUDA 12 runtime (cublasLt64_12.dll),\n"
+    "  but torch in this ComfyUI build ships CUDA 13 (cublasLt64_13.dll).\n"
+    "  Fix (installs into this plugin folder, ~1.1GB, does not touch your env):\n"
+    "    double-click  install_cuda12.bat   (Windows)\n"
+    "    bash install_cuda12.sh             (Linux/macOS)\n"
+    "  Or download the offline package and unzip into <plugin>/cuda12/  (see README).\n"
+)
+
+
 def device_label(sess, requested):
     used = sess.get_providers()
     gpu = [p for p in used if "CUDA" in p or "Tensorrt" in p]
@@ -189,10 +200,23 @@ def device_label(sess, requested):
             name = gpu[0]
         return f"GPU · {name}"
     if requested and requested[0] != "CPUExecutionProvider":
-        print(CUDA12_HINT)
+        _log(CUDA12_HINT, CUDA12_HINT_ASCII)
         return "CPU ⚠ 请求了 GPU 但回退到 CPU（多为缺 CUDA 运行库，见 README）"
     return "CPU"
 
+
+
+def _log(msg, ascii_fallback=None):
+    """安全打印：Windows GBK 控制台打印中文/⚠ 会抛 UnicodeEncodeError，
+    这里兜底成 ASCII，保证日志永远不会让节点崩掉。"""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            print(ascii_fallback if ascii_fallback is not None
+                  else msg.encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------- 节点
 class WD14TaggerPlus:
@@ -290,5 +314,5 @@ class WD14TaggerPlus:
             s = (", ".join(picked) + ("," if trailing_comma and picked else ""))
             results.append(s)
 
-        print(f"[TaggerPlus/WD14] {model} | 实际设备: {label} | {len(results)} 张")
+        _log(f"[TaggerPlus/WD14] {model} | device: {label} | {len(results)} image(s)")
         return (results if len(results) > 1 else results[0], label)

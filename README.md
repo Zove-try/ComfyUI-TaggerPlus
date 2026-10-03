@@ -142,6 +142,29 @@ MIT licensed; the PixAI architecture code is vendored from
 ## FAQ
 
 <details>
+<summary><b>Q：不下载 CUDA 运行库、也不放进目录，会怎样？</b></summary>
+
+**完全不影响使用，只是慢。** 实测（同一台机、同一批图）：
+
+| | 第 1 张 | 第 2 张 | 第 3 张 | 标签结果 |
+|---|---|---|---|---|
+| 有 CUDA 运行库（GPU） | 2.33 s | 0.09 s | 0.17 s | — |
+| 没有（自动退回 CPU） | 4.01 s | 1.64 s | 1.89 s | **与 GPU 逐字节相同** |
+
+也就是说：
+
+- ✅ 功能、参数、输出**一模一样**，不会有任何报错或缺失
+- ✅ 只是单张从 **0.1 秒变成 1.6 秒左右**（约 10–20 倍）
+- ✅ `device` 输出会明确写 `CPU ⚠ 请求了 GPU 但回退到 CPU`，控制台也会打印修复方法
+- ⚠️ 唯一的代价是 CPU 占用（会和 ComfyUI 里的其他 CPU 任务抢资源）
+
+而且即使不装运行库，本插件相对原版**仍然是大幅提速**的
+（原版 16.5 s/张 → 本插件 CPU 约 1.6 s/张，因为省掉了每张重建 ONNX 会话的开销）。
+
+</details>
+
+
+<details>
 <summary><b>Q：装了插件但还是 CPU，device 显示 <code>CPU ⚠ …</code></b></summary>
 
 按顺序检查：

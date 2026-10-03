@@ -14,6 +14,15 @@ ComfyUI-TaggerPlus
 详见 vendor/LICENSE.ComfyUI-Tagger.txt。
 """
 import os
+import sys
+
+# Windows 中文环境控制台默认是 GBK，节点里打印 ⚠ / 中文会抛 UnicodeEncodeError。
+# 这里只把「无法编码的字符」替换掉，不改编码本身（尽量少侵入全局状态）。
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:
+    pass
 
 from .nodes.wd14 import WD14TaggerPlus
 from .nodes.pixai import PixAITaggerPlus
