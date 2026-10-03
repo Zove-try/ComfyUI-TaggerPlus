@@ -57,14 +57,7 @@ KNOWN = {
     },
 }
 
-#: 下拉条目的文案保持语言中立（中文说明放在可本地化的 tooltip 里），
-#: 表达式形如 "\u2b07 <模型名> · <体积>"，解析时只依赖 MARK 与分隔符。
-MARK = "\u2b07 "
-SEP = " \u00b7 "
 TAG = "[TaggerPlus]"
-_print_lock = None
-
-
 def endpoints():
     envs = [os.environ.get("TAGGERPLUS_HF_ENDPOINT")]
     cfg = os.path.join(_PACK, "taggerplus_dirs.json")
@@ -217,22 +210,28 @@ def fetch(kind, name, dest_dir, max_bytes=None):
 
 
 def combo_entries(kind, installed):
-    """下拉条目。
+    """下拉条目 = 已安装的模型 + 尚未安装的已知模型，**统一用裸模型名**。
 
-    ★ 带下载箭头的条目**始终列出**，即使模型已经下载过。
-      原因：工作流把下拉的值按字符串保存。如果下载后该条目消失，
-      存档里的值就不再属于选项列表，ComfyUI 校验时会报
-      "Value not in list"，用户必须手动重选一次。
-      保留条目后，选它的行为退化为"直接用本地文件"，值永远有效。
+    值的稳定性靠"名字本身不变"保证：下载前后都是同一个字符串，
+    因此已保存的工作流不会失效，也不需要任何图标或体积后缀做标记。
+    尚未下载的模型在首次运行时自动获取（fetch 内部判断文件是否存在）。
     """
     out = list(installed)
-    for name, (repo, files, size, note, _sub) in KNOWN.get(kind, {}).items():
-        out.append(f"{MARK}{name}{SEP}{size}")
+    for name in KNOWN.get(kind, {}):
+        if name not in installed:
+            out.append(name)
     return out
 
 
-def parse_selection(sel):
-    """从下拉选项解析出 (模型名, 是否需下载)"""
-    if sel.startswith(MARK):
-        return sel[len(MARK):].split(SEP)[0].strip(), True
-    return sel, False
+def parse_selection(sel, kind=None):
+    """解析下拉值 -> (模型名, 是否需要确保本地存在)
+
+    值是裸模型名。若它是本插件管理的已知模型，返回 need=True，
+    由 fetch() 判断本地是否已有（有则直接使用，无则下载）。
+    兼容早期带图标的旧值。
+    """
+    name = sel.strip().lstrip("\u2b07").strip()
+    if "\u00b7" in name:                      # 兼容旧格式 "名字 · 体积"
+        name = name.split("\u00b7")[0].strip()
+    known = name in KNOWN.get(kind, {}) if kind else False
+    return name, known

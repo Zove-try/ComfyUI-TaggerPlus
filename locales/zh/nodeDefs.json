@@ -6,7 +6,7 @@
       "image": { "name": "图像" },
       "model": {
         "name": "模型",
-        "tooltip": "两种格式自动识别、无需转换：\n  - ONNX（.onnx + 词表 csv）：自动适配 NHWC / NCHW 布局\n  - safetensors + timm（<模型名>/model.safetensors + config.json）：社区模型\n带下载箭头 ⬇ 的条目会在首次使用时自动下载（优先官方源，失败切国内镜像）。已下载过的模型也可以保持选中这一条，会直接使用本地文件，不会重复下载。"
+        "tooltip": "两种格式自动识别、无需转换：\n  - ONNX（.onnx + 词表 csv）：自动适配 NHWC / NCHW 布局\n  - safetensors + timm（<模型名>/model.safetensors + config.json）：社区模型\n列表中包含尚未下载的模型；首次运行时自动获取（优先官方源，失败切国内镜像），已下载的直接使用本地文件。"
       },
       "threshold": {
         "name": "通用标签阈值",
@@ -58,7 +58,7 @@
       "image": { "name": "图像" },
       "model": {
         "name": "模型",
-        "tooltip": "自动扫描 ComfyUI/models/pixai_tagger/。带下载箭头 ⬇ 的条目会在首次使用时自动下载。"
+        "tooltip": "自动扫描 ComfyUI/models/pixai_tagger/。列表中尚未下载的模型会在首次运行时自动获取。"
       },
       "threshold_mode": {
         "name": "阈值模式",

@@ -6,7 +6,7 @@
       "image": { "name": "image" },
       "model": {
         "name": "model",
-        "tooltip": "Two formats are auto-detected, no conversion needed:\n  - ONNX (.onnx + tag csv): adapts NHWC / NCHW automatically\n  - safetensors + timm (<name>/model.safetensors + config.json): community models\nEntries marked with a download arrow are fetched on first use (official source first, then mirror). Keeping a downloaded entry selected is fine: the local files are used directly, nothing is re-downloaded."
+        "tooltip": "Two formats are auto-detected, no conversion needed:\n  - ONNX (.onnx + tag csv): adapts NHWC / NCHW automatically\n  - safetensors + timm (<name>/model.safetensors + config.json): community models\nModels that are not downloaded yet are fetched automatically on first run (official source first, then mirror); downloaded ones are used from disk."
       },
       "threshold": {
         "name": "threshold",
@@ -58,7 +58,7 @@
       "image": { "name": "image" },
       "model": {
         "name": "model",
-        "tooltip": "Scanned from ComfyUI/models/pixai_tagger/. Entries marked with a download arrow are fetched on first use."
+        "tooltip": "Scanned from ComfyUI/models/pixai_tagger/. Models that are not downloaded yet are fetched on first run."
       },
       "threshold_mode": {
         "name": "threshold_mode",

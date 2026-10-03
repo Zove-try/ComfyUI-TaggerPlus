@@ -226,7 +226,7 @@ class PixAITaggerPlus:
             include_style=True, include_meta=False, include_rating=False,
             replace_underscore=False, exclude_tags=""):
 
-        name, need_dl = fetch.parse_selection(model)
+        name, need_dl = fetch.parse_selection(model, "pixai")
         if need_dl:
             if not fetch.fetch("pixai", name, os.path.join(models_root(), name)):
                 raise RuntimeError(

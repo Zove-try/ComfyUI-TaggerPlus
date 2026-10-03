@@ -418,7 +418,7 @@ class WD14TaggerPlus:
             replace_underscore=False, escape_parens=False, sort_by_confidence=False,
             trailing_comma=False, exclude_tags="", color_order="auto", preprocess="auto"):
 
-        name, need_dl = fetch.parse_selection(model)
+        name, need_dl = fetch.parse_selection(model, "wd14")
         real = name[:-len(" (timm)")] if name.endswith(" (timm)") else name
         if need_dl:
             spec = fetch.KNOWN["wd14"].get(name) or fetch.KNOWN["wd14"].get(real)
