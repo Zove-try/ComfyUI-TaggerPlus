@@ -170,7 +170,8 @@ CUDA12_HINT = (
     "\n[TaggerPlus] 检测到 CUDA provider 加载失败，已退回 CPU。\n"
     "  原因通常是 onnxruntime-gpu 需要 CUDA 12 运行库（cublasLt64_12.dll），\n"
     "  而 ComfyUI 便携包里的 torch 带的是 CUDA 13（cublasLt64_13.dll），文件名不匹配。\n"
-    "  修复（装到本插件目录，不影响主环境，约 1.3GB）：\n"
+    "  一键修复：双击插件目录里的 install_cuda12.bat（Linux/macOS 用 install_cuda12.sh）\n"
+    "  或手动执行（装到本插件目录，不影响主环境，约 1.3GB）：\n"
     '    "<ComfyUI python>" -m pip install --target "<插件目录>/cuda12" \\\n'
     "        nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 nvidia-curand-cu12\n"
     "  装完重启 ComfyUI，device 输出会变成 GPU · <显卡名>。\n"

@@ -1,6 +1,7 @@
 ﻿__pycache__/
 *.py[cod]
 taggerplus_dirs.json
+cuda12/          # 由 install_cuda12.* 按需下载，不进仓库（1.3GB）
 models/
 .venv/
 .DS_Store

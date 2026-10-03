@@ -16,14 +16,43 @@
 
 ## 安装
 
+插件本体**只有约 60 KB**（纯代码），正常安装即可：
+
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/<you>/ComfyUI-TaggerPlus
-# 依赖（ComfyUI 里通常已装 torch；onnxruntime-gpu 需要）
-pip install -r ComfyUI-TaggerPlus/requirements.txt
 ```
 
-重启 ComfyUI，节点出现在 **TaggerPlus** 分类下。
+或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
+节点出现在 **TaggerPlus** 分类下。
+
+### CUDA 运行库（可选，按需）
+
+**大多数用户什么都不用装。** 本插件在创建 ONNX 会话前会自动依次扫描：
+
+1. `site-packages/nvidia/*/bin`（如果你装过 `nvidia-*-cu12`）
+2. `torch/lib` ← **如果你的 ComfyUI 用的是 CUDA 12 版 torch（绝大多数便携包都是 cu121/cu124/cu126），
+   `cublasLt64_12.dll` 这里就有，直接可用**
+3. 插件目录下的 `cuda12/`（见下）
+
+只有当上面三处都找不到 CUDA 12 运行库时（典型情况：**torch 是 CUDA 13 版本**），
+WD14 才会退回 CPU。此时节点会：
+
+- 在 `device` 输出里明确写 **`CPU ⚠ 请求了 GPU 但回退到 CPU`**（不再静默）
+- 在控制台打印修复命令
+
+一键修复：
+
+| 平台 | 命令 |
+|---|---|
+| Windows | 双击 `install_cuda12.bat` |
+| Linux / macOS | `bash install_cuda12.sh` |
+
+脚本会把 4 个 NVIDIA 运行库（约 1.3 GB）装进 `<插件目录>/cuda12/`，**不影响你的主环境**，
+卸载直接删目录。装完重启 ComfyUI 即可。
+
+> 为什么不在仓库里直接附带这些 DLL：1.3 GB 会让仓库无法使用（GitHub 单文件上限 100 MB），
+> 而且 NVIDIA 的运行时库应当通过官方渠道分发。用脚本按需下载既能保持仓库轻量，也合规。
 
 ## 节点
 
