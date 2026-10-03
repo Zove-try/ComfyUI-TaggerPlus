@@ -21,6 +21,8 @@ import threading
 import numpy as np
 from PIL import Image
 
+from . import fetch
+
 # ---------------------------------------------------------------- 模型目录
 _HERE = os.path.dirname(os.path.realpath(__file__))
 _PACK = os.path.dirname(_HERE)
@@ -60,15 +62,33 @@ def search_dirs():
     return out
 
 
+def vocab_path(onnx_path):
+    """词表定位：优先 同名.csv，其次 HF 原始的 selected_tags.csv，
+    最后接受目录里唯一的 csv（这样手动下载的用户不用改名）"""
+    stem = os.path.splitext(onnx_path)[0]
+    for cand in (stem + ".csv", os.path.join(os.path.dirname(onnx_path), "selected_tags.csv")):
+        if os.path.exists(cand):
+            return cand
+    sibs = glob.glob(os.path.join(os.path.dirname(onnx_path), "*.csv"))
+    return sibs[0] if len(sibs) == 1 else None
+
+
 def list_models():
-    """只列出「.onnx + 同名 .csv」都存在的模型"""
+    """列出「.onnx + 能找到对应词表」的模型"""
     found = {}
     for d in search_dirs():
         for onnx in sorted(glob.glob(os.path.join(d, "*.onnx"))):
             stem = os.path.splitext(os.path.basename(onnx))[0]
-            if os.path.exists(os.path.join(d, stem + ".csv")):
+            if vocab_path(onnx):
                 found.setdefault(stem, onnx)
     return found
+
+
+def model_dir():
+    """自动下载的落地目录"""
+    d = os.path.join(_MODELS_ROOT, "wd14_tagger")
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 # ---------------------------------------------------------------- 设备 / 会话
@@ -222,14 +242,14 @@ def _log(msg, ascii_fallback=None):
 class WD14TaggerPlus:
     @classmethod
     def INPUT_TYPES(cls):
-        models = list(list_models().keys())
+        models = fetch.combo_entries("wd14", list(list_models().keys()))
         dirs = search_dirs()
-        tip = "模型目录：" + (" | ".join(dirs) if dirs else "（还没找到目录）")
         return {
             "required": {
                 "image": ("IMAGE",),
-                "model": (models or ["（请把 .onnx 和同名 .csv 放进 models/wd14_tagger/）"],
-                          {"tooltip": "自动扫描以下目录：\n" + "\n".join(dirs)}),
+                "model": (models or ["（没有可用模型）"], {"tooltip":
+                    "已装模型直接选；带 ⬇ 的条目会在首次使用时**自动下载**（优先官方，失败切国内镜像）\n"
+                    "扫描目录：\n" + "\n".join(dirs)}),
                 "threshold": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01,
                                         "tooltip": "通用标签阈值（原版默认 0.35）"}),
                 "character_threshold": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01,
@@ -263,13 +283,20 @@ class WD14TaggerPlus:
     def tag(self, image, model, threshold, character_threshold, device="auto",
             replace_underscore=False, escape_parens=False, sort_by_confidence=False,
             trailing_comma=False, exclude_tags=""):
+        name, need_dl = fetch.parse_selection(model)
+        if need_dl:
+            if not fetch.fetch("wd14", name, model_dir()):
+                raise RuntimeError(
+                    f"自动下载 {name} 失败。可手动下载后放进 {model_dir()}，"
+                    "或设置环境变量 TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com，"
+                    "或先在 ComfyUI 控制台看具体报错。")
         table = list_models()
-        if model not in table:
+        if name not in table:
             raise ValueError(
-                f"找不到模型 {model!r}。已扫描目录：\n  " + "\n  ".join(search_dirs()) +
-                "\n请把 .onnx 与同名 .csv 放进 models/wd14_tagger/（或在插件的 taggerplus_dirs.json 里加目录）")
-        onnx_path = table[model]
-        csv_path = onnx_path[:-5] + ".csv"
+                f"找不到模型 {name!r}。已扫描目录：\n  " + "\n  ".join(search_dirs()) +
+                "\n请把 .onnx 与词表 csv 放进 models/wd14_tagger/（或在插件的 taggerplus_dirs.json 里加目录）")
+        onnx_path = table[name]
+        csv_path = vocab_path(onnx_path)
 
         providers = pick_providers(device)
         sess = get_session(onnx_path, providers)
@@ -314,5 +341,5 @@ class WD14TaggerPlus:
             s = (", ".join(picked) + ("," if trailing_comma and picked else ""))
             results.append(s)
 
-        _log(f"[TaggerPlus/WD14] {model} | device: {label} | {len(results)} image(s)")
+        _log(f"[TaggerPlus/WD14] {name} | device: {label} | {len(results)} image(s)")
         return (results if len(results) > 1 else results[0], label)

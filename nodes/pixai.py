@@ -26,6 +26,7 @@ import torchvision.transforms.functional as TF
 from safetensors.torch import load_file as load_safetensors
 from transformers import PretrainedConfig, PreTrainedModel
 
+from . import fetch
 from ..vendor.pixai_vitdet import (          # noqa: F401  (架构 + rescale_pad)
     LayerScale, PatchEmbed, Attention, Block, MHAttnPool,
     ViTDetClsConfig, ViTDetCls, rescale_pad,
@@ -92,6 +93,13 @@ def list_configs():
             rel = os.path.relpath(cfg, d).replace("\\", "/")
             out.append(rel)
     return sorted(set(out))
+
+
+def models_root():
+    """自动下载的落地目录（每个模型一个子文件夹）"""
+    d = os.path.join(_MODELS_ROOT, "pixai_tagger")
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 _CACHE = {}
@@ -169,13 +177,14 @@ def _log(msg, ascii_fallback=None):
 class PixAITaggerPlus:
     @classmethod
     def INPUT_TYPES(cls):
-        models = list(list_models().keys())
+        models = fetch.combo_entries("pixai", list(list_models().keys()))
         dirs = search_dirs()
         return {
             "required": {
                 "image": ("IMAGE",),
-                "model": (models or ["（请把 model.safetensors + config.json 放进 models/pixai_tagger/）"],
-                          {"tooltip": "自动扫描以下目录：\n" + "\n".join(dirs)}),
+                "model": (models or ["（没有可用模型）"], {"tooltip":
+                    "已装模型直接选；带 ⬇ 的条目会在首次使用时**自动下载**（优先官方，失败切国内镜像）\n"
+                    "扫描目录：\n" + "\n".join(dirs)}),
                 "threshold_mode": (["custom", "optimal_calibrated"], {"default": "custom",
                     "tooltip": "custom = 用下面 6 个阈值；optimal_calibrated = 模型自带的逐标签校准阈值（会忽略下面 6 个）"}),
                 "general_threshold": ("FLOAT", {"default": 0.17, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -216,12 +225,19 @@ class PixAITaggerPlus:
             include_style=True, include_meta=False, include_rating=False,
             replace_underscore=False, exclude_tags=""):
 
+        name, need_dl = fetch.parse_selection(model)
+        if need_dl:
+            if not fetch.fetch("pixai", name, os.path.join(models_root(), name)):
+                raise RuntimeError(
+                    f"自动下载 {name} 失败（约 1.9 GB）。可手动下载后放进 "
+                    f"{os.path.join(models_root(), name)}，"
+                    "或设置 TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com")
         table = list_models()
-        if model not in table:
+        if name not in table:
             raise ValueError(
-                f"找不到模型 {model!r}。已扫描目录：\n  " + "\n  ".join(search_dirs()) +
+                f"找不到模型 {name!r}。已扫描目录：\n  " + "\n  ".join(search_dirs()) +
                 "\n请把 model.safetensors + config.json 放进 models/pixai_tagger/")
-        model_path, config_path = table[model]
+        model_path, config_path = table[name]
         if config_override != "auto":
             for d in search_dirs():
                 p = os.path.join(d, config_override)

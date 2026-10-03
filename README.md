@@ -28,6 +28,83 @@ git clone https://github.com/Zove-try/ComfyUI-TaggerPlus
 或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
 节点出现在 **TaggerPlus** 分类下。
 
+## 模型下载
+
+### 首选：什么都不用做 🎉
+
+**下拉列表里带 `⬇` 的条目，选中就会自动下载**，进度打印在 ComfyUI 控制台：
+
+```
+WD14 Tagger Plus 的 model 下拉：
+  wd-eva02-large-tagger-v3              ← 已装
+  ⬇ wd-swinv2-tagger-v3  (需下载) · 446 MB · 较快
+  ⬇ wd-vit-tagger-v3     (需下载) · 361 MB · 最快
+  ⬇ wd-v1-4-moat-tagger-v2 (需下载) · 311 MB · 旧版 v1.4，可作对照
+```
+
+下载源会**先试 HuggingFace 官方，失败自动切 hf-mirror.com 国内镜像**。
+中断不会留下坏文件（用 `.part` 临时文件 + 原子改名）。
+
+可自动下载的模型：
+
+| 模型 | 体积 | 说明 |
+|---|---|---|
+| `wd-eva02-large-tagger-v3` | 1.2 GB | 最准（推荐，本插件作者用的就是它） |
+| `wd-swinv2-tagger-v3` | 446 MB | 较快 |
+| `wd-convnext-tagger-v3` | 377 MB | 较快 |
+| `wd-vit-tagger-v3` | 361 MB | 最快 |
+| `wd-v1-4-moat-tagger-v2` | 311 MB | 旧版 v1.4，适合做版本对照 |
+| `pixai-tagger-v1.0`（PixAI 节点） | 1.9 GB | 官方 v1.0 |
+
+### 自动下载失败怎么办
+
+**A. 换镜像**：设一个环境变量再启动 ComfyUI
+
+```powershell
+# Windows（临时）
+$env:TAGGERPLUS_HF_ENDPOINT = "https://hf-mirror.com"
+# 或永久：系统设置 → 环境变量 → 新建 TAGGERPLUS_HF_ENDPOINT = https://hf-mirror.com
+```
+```bash
+# Linux / macOS
+export TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com
+```
+
+也可以在插件目录的 `taggerplus_dirs.json` 里写：
+
+```json
+{ "hf_endpoint": "https://hf-mirror.com" }
+```
+
+**B. 手动下载**（浏览器或下载工具，支持断点续传）
+
+| 要下的文件 | 地址 |
+|---|---|
+| WD14 权重 | `https://hf-mirror.com/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/model.onnx` |
+| WD14 词表 | `https://hf-mirror.com/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/selected_tags.csv` |
+| PixAI 权重 | `https://hf-mirror.com/pixai-labs/pixai-tagger-v1.0/resolve/main/model.safetensors` |
+| PixAI 配置 | `https://hf-mirror.com/pixai-labs/pixai-tagger-v1.0/resolve/main/config.json` |
+
+（把 `hf-mirror.com` 换成 `huggingface.co` 就是官方源，能直连的话更快）
+
+放哪里：
+
+```
+ComfyUI/models/wd14_tagger/
+├── model.onnx              ← WD14 权重
+└── selected_tags.csv       ← WD14 词表（**不用改名**，插件会认）
+
+ComfyUI/models/pixai_tagger/pixai-tagger-v1.0/
+├── model.safetensors       ← PixAI 权重
+└── config.json             ← PixAI 配置
+```
+
+> 文件名保持原样即可 —— 插件会同时认 `<模型名>.csv` 和 HF 原始的 `selected_tags.csv`。
+> 想让下拉里显示得清楚些，可以把 `model.onnx` 改名成 `wd-eva02-large-tagger-v3.onnx`
+> （此时词表要改名为 `wd-eva02-large-tagger-v3.csv`）。
+
+**C. 加载很慢？** 见上面的 [CUDA 运行库](#cuda-运行库可选只有需要时才装) —— 那只影响推理速度，不影响下载。
+
 ### CUDA 运行库（可选，只有需要时才装）
 
 **先直接跑一次。** 打开 WD14 Tagger Plus，看它的 `device` 输出：

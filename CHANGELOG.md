@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.1 — 2026-10-03
+
+### 新增
+
+- **模型自动下载**：下拉列表里带 `⬇` 的条目，选中即自动下载
+  （先试 HuggingFace 官方，失败自动切 hf-mirror.com 国内镜像；`.part` 临时文件 + 原子改名，
+  中断不留坏文件）
+- 支持 `TAGGERPLUS_HF_ENDPOINT` 环境变量 / `taggerplus_dirs.json` 的 `hf_endpoint` 指定镜像
+- WD14 词表匹配放宽：现在同时认 `<模型名>.csv` 与 HF 原始的 `selected_tags.csv`，
+  手动下载的用户**不需要改名**
+- README 增加「模型下载」章节（自动 / 镜像 / 手动三条路径 + 体积表）
+
+
 ## v0.1.0 — 2026-10-03
 
 首个版本。
