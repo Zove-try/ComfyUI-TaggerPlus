@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-taggerplus"
-version = "0.1.0"
+version = "0.1.3"
 description = "Fixed WD14 / PixAI tagger nodes for ComfyUI: cached ONNX sessions, visible device reporting, dropdown model selection"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -16,6 +16,6 @@ Repository = "https://github.com/Zove-try/ComfyUI-TaggerPlus"
 Issues = "https://github.com/Zove-try/ComfyUI-TaggerPlus/issues"
 
 [tool.comfy]
-PublisherId = "Zove-try"   # 需与你在 ComfyUI Registry 注册的 publisher id 一致
+PublisherId = "Zove-try"   # 闇€涓庝綘鍦?ComfyUI Registry 娉ㄥ唽鐨?publisher id 涓€鑷?
 DisplayName = "TaggerPlus"
 Icon = ""
