@@ -26,99 +26,70 @@ git clone https://github.com/<you>/ComfyUI-TaggerPlus
 或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
 节点出现在 **TaggerPlus** 分类下。
 
-### CUDA 运行库（可选，按需）
+### CUDA 运行库（可选，只有需要时才装）
 
-**大多数用户什么都不用装。** 本插件在创建 ONNX 会话前会自动依次扫描：
+**先直接跑一次。** 打开 WD14 Tagger Plus，看它的 `device` 输出：
 
-1. `site-packages/nvidia/*/bin`（如果你装过 `nvidia-*-cu12`）
-2. `torch/lib` ← **如果你的 ComfyUI 用的是 CUDA 12 版 torch（绝大多数便携包都是 cu121/cu124/cu126），
-   `cublasLt64_12.dll` 这里就有，直接可用**
-3. 插件目录下的 `cuda12/`（见下）
+| 输出 | 含义 | 要做什么 |
+|---|---|---|
+| `GPU · NVIDIA GeForce RTX xxxx` | 已经在用显卡 | **什么都不用装** |
+| `CPU ⚠ 请求了 GPU 但回退到 CPU` | 缺 CUDA 12 运行库 | 选下面任一种方式装 |
 
-只有当上面三处都找不到 CUDA 12 运行库时（典型情况：**torch 是 CUDA 13 版本**），
-WD14 才会退回 CPU。此时节点会：
+插件在创建 ONNX 会话前会**自动依次扫描**三处，任意一处命中就直接用 GPU：
 
-- 在 `device` 输出里明确写 **`CPU ⚠ 请求了 GPU 但回退到 CPU`**（不再静默）
-- 在控制台打印修复命令
+1. `site-packages/nvidia/*/bin` —— 装过 `nvidia-*-cu12` 的话
+2. `torch/lib` —— **如果你的 ComfyUI 便携包用的是 CUDA 12 版 torch
+   （cu121 / cu124 / cu126，绝大多数便携包都是），`cublasLt64_12.dll` 这里就有，零下载直接可用**
+3. `<插件目录>/cuda12/` —— 下面两种安装方式的落地位置
 
-一键修复：
+只有三处都找不到时才会退回 CPU（典型情况：**torch 是 CUDA 13 版本**）。
 
-| 平台 | 命令 |
+---
+
+#### 方式 A：网盘下载（推荐，不用命令行、不用联网 pip）
+
+> **下载地址：【待填 —— 上传后把网盘链接贴到这里】**
+> 文件名：`ComfyUI-TaggerPlus_CUDA12运行库_Windows.zip`
+> 大小：**787 MB**（解压后约 1.1 GB）
+> SHA256：`287643aa255738c49ead59e2d3dc7562879d4bebb6a0ef1a7d221936de607df5`
+> 适用：**仅 Windows**（Linux / macOS 请用方式 B）
+
+下载后**把压缩包里的 `cuda12` 文件夹整体解压到插件目录**，与 `nodes`、`vendor` 同级：
+
+```
+ComfyUI/
+└── custom_nodes/
+    └── ComfyUI-TaggerPlus/          ← 插件目录
+        ├── nodes/
+        ├── vendor/
+        ├── __init__.py
+        └── cuda12/                  ← 解压到这里
+            └── nvidia/
+                ├── cublas/bin/cublasLt64_12.dll
+                ├── cuda_runtime/bin/cudart64_12.dll
+                ├── cufft/bin/cufft64_11.dll
+                └── curand/bin/curand64_10.dll
+```
+
+解压后最终路径必须是
+`ComfyUI-TaggerPlus/cuda12/nvidia/cublas/bin/cublasLt64_12.dll`。
+如果变成了 `cuda12/cuda12/nvidia/...`（多了一层），手动把里面那层提上来即可。
+
+重启 ComfyUI，`device` 显示 `GPU · ...` 就成了。
+
+#### 方式 B：一键脚本（自动 pip，跨平台）
+
+| 平台 | 操作 |
 |---|---|
-| Windows | 双击 `install_cuda12.bat` |
+| Windows | 双击插件目录里的 **`install_cuda12.bat`** |
 | Linux / macOS | `bash install_cuda12.sh` |
 
-脚本会把 4 个 NVIDIA 运行库（约 1.3 GB）装进 `<插件目录>/cuda12/`，**不影响你的主环境**，
-卸载直接删目录。装完重启 ComfyUI 即可。
+脚本会自动找到 ComfyUI 的 python（便携包路径优先），把 4 个 NVIDIA 运行库装进
+`<插件目录>/cuda12/`，并校验结果。失败时会提示换国内镜像。
 
-> 为什么不在仓库里直接附带这些 DLL：1.3 GB 会让仓库无法使用（GitHub 单文件上限 100 MB），
-> 而且 NVIDIA 的运行时库应当通过官方渠道分发。用脚本按需下载既能保持仓库轻量，也合规。
-
-## 节点
-
-### 1. WD14 Tagger Plus ⚡
-
-- 输入：`image`、`model`（下拉）、`threshold`、`character_threshold`、`device`
-- 输出：`tags`(STRING)、`device`(STRING)
-- 模型放置：`ComfyUI/models/wd14_tagger/` 下放 **`.onnx` 与同名 `.csv`**
-  （默认也会扫描 `custom_nodes/ComfyUI-WD14-Tagger/models/`，所以现有模型不用搬）
-- 相对原版的差异（都是可选项，默认更"干净"）：
-  - `escape_parens` 默认 **False**（原版强制把 `(` `)` 转成 `\(` `\)`，会让下游按标签查表的节点失效）
-  - `sort_by_confidence` 默认 **False**（与原版一致的词表顺序）
-  - `exclude_tags` 大小写不敏感、下划线/空格两种写法都匹配
-
-### 2. PixAI Tagger Plus ⚡
-
-- 输入：`image`、`model`（下拉）、6 个类别阈值、`threshold_mode`、`device` 等
-- 输出：与原版**完全一致**的 7 个 STRING + 新增 `device`(STRING)
-- 模型放置（二选一）：
-  - **A**：整个 HF 仓库文件夹拷进 `ComfyUI/models/pixai_tagger/pixai-tagger-v1.0/`
-    （含 `model.safetensors` + `config.json`）→ 下拉里出现 `pixai-tagger-v1.0`
-  - **B**：只放两个文件到 `ComfyUI/models/pixai_tagger/` → 下拉里出现 `model.safetensors`
-- 已经在别处的模型（例如 `E:/pixai-tagger`）不用搬，在插件根目录建 `taggerplus_dirs.json`：
-
-```json
-{
-  "pixai_tagger": ["E:/pixai-tagger"],
-  "wd14_tagger": ["D:/models/wd"]
-}
-```
-
-## 关于「WD14 慢」的完整结论
-
-在本机（RTX 5060 Ti + `onnxruntime-gpu 1.23.2` + `torch 2.9.1+cu130`）实测：
-
-```
-原版 WD14 节点：16.50s / 16.47s / 16.21s（三张不同图，耗时完全一样）
-PixAI 节点：    5.92s（首张含加载） / 0.62s / 0.61s
-```
-
-拆开后：
-
-| 环节 | 耗时 | 归属 |
-|---|---|---|
-| 磁盘顺序读 1.2 GB | 0.55 s | 无关（2,199 MB/s） |
-| 解析 10,861 行词表 | 0.01 s | 无关 |
-| 创建 ONNX 会话 | 3 – 6 s | **原节点每次执行都重建** |
-| 推断（448²） | CPU 约 1.6 s / GPU 约 0.2 s | 取决于 provider |
-
-**最坑的一点**：`onnxruntime-gpu` 的 CUDA provider 需要 **CUDA 12** 运行库（`cublasLt64_12.dll`），
-而 ComfyUI 便携包里的 torch 往往带的是 **CUDA 13**（`cublasLt64_13.dll`），文件名不同 → 加载失败 →
-**静默退回 CPU**。ORT 只在 stderr 打一行警告，节点日志完全看不到。
-
-### 让 CUDA 真正生效（实测有效）
-
-不用改动 ComfyUI 主环境 —— 把 CUDA 12 运行库装到**插件自己的目录**里，本插件会自动把它
-加入 DLL 搜索路径：
-
-```bash
-"<ComfyUI>/python/python.exe" -m pip install --target "<ComfyUI>/custom_nodes/ComfyUI-TaggerPlus/cuda12" \
-    nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 nvidia-curand-cu12
-```
-
-> 约 1.35 GB。之所以需要它：`onnxruntime-gpu` 的 CUDA EP 是针对 **CUDA 12** 编译的，而
-> ComfyUI 便携包里的 `torch` 通常带 **CUDA 13**（`cublasLt64_13.dll`），**文件名不同 → 找不到**。
-> cuDNN 9 一般已随 torch 提供，无需另装。
+> 为什么仓库里不直接附带这些 DLL：解压后 1.1 GB，GitHub 单文件上限 100 MB，仓库也没法 clone；
+> 而且 NVIDIA 运行时库应通过官方渠道分发。所以仓库保持 **约 60 KB 纯代码**，运行库按需获取。
+> 不需要了直接删掉 `cuda12/` 文件夹即可，不影响任何其他东西。
 
 ### 修好之后（本机 RTX 5060 Ti 实测）
 
@@ -167,3 +138,55 @@ Two "fixed" tagger nodes for ComfyUI:
 Outputs are byte-identical to the upstream nodes (verified), so you can swap them in safely.
 MIT licensed; the PixAI architecture code is vendored from
 [sln77/ComfyUI-Tagger](https://github.com/sln77/ComfyUI-Tagger) with attribution.
+
+## FAQ
+
+<details>
+<summary><b>Q：装了插件但还是 CPU，device 显示 <code>CPU ⚠ …</code></b></summary>
+
+按顺序检查：
+
+1. `cuda12/nvidia/cublas/bin/cublasLt64_12.dll` 这个路径存在吗？（多一层 `cuda12/` 是常见错误）
+2. 重启的是 **跑着 8188 端口的那个 ComfyUI 进程**吗？（不是关掉网页就行）
+3. 控制台（不是节点界面）里有没有 ORT 的报错？把报错发到 issue 里
+4. 如果用的是 CUDA 12 版 torch，其实不用装 —— 检查一下 `torch/lib/cublasLt64_12.dll` 是否存在
+</details>
+
+<details>
+<summary><b>Q：第一次跑要等几十秒，正常吗？</b></summary>
+
+正常。首次创建 CUDA 会话要从磁盘读入约 1 GB 的 CUDA 运行库并初始化，
+冷启动可能 10–50 秒；之后会话被缓存，**每张图只要 0.07–0.2 秒**。
+热缓存下建会话约 1.8 秒。
+</details>
+
+<details>
+<summary><b>Q：和原版节点的输出会不一样吗？</b></summary>
+
+不会。与原版做过逐标签比对（把 `escape_parens` 设为 `True` 对齐原版行为时），
+输出字符串**完全相同**。默认关闭括号转义，是为了让下游按标签查表的节点能正常工作
+（原版会把 `(` `)` 转成 `\(` `\)`，导致 `xxx_(series)` 这类标签查不到）。
+</details>
+
+<details>
+<summary><b>Q：模型一定要搬到 models 目录吗？</b></summary>
+
+不用。插件默认也会扫描 `custom_nodes/ComfyUI-WD14-Tagger/models/`（WD14），
+另外可以在插件根目录建 `taggerplus_dirs.json` 指定任意目录：
+
+```json
+{
+  "pixai_tagger": ["E:/pixai-tagger"],
+  "wd14_tagger": []
+}
+```
+</details>
+
+<details>
+<summary><b>Q：为什么我的 WD14 有 16 秒那么慢？</b></summary>
+
+两个原因叠加：① 原版节点每次执行都重建 ONNX 会话；② CUDA provider 加载失败后
+**静默**退回 CPU（CPU 单张要 1.6 秒以上）。本插件把两者都解决了，
+并且会把实际设备显示出来，不会再让你蒙在鼓里。
+</details>
+
