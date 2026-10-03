@@ -147,7 +147,8 @@ def get_loaded(model_path, config_path, device_pref):
     else:
         best = torch.full([len(tags)], 0.2, dtype=torch.float32, device=device)
 
-    _log(f"[TaggerPlus/PixAI] loading {os.path.basename(model_path)} -> {device} ...")
+    _log(f"[TaggerPlus/PixAI] 正在加载 {os.path.basename(model_path)}（约 1.9 GB）→ {device}"
+         f"，首次加载需要十几秒，之后常驻显存/内存")
     model = ViTDetCls(cfg)
     sd = (load_safetensors(model_path, device="cpu") if model_path.endswith(".safetensors")
           else torch.load(model_path, map_location="cpu", weights_only=True))
@@ -166,11 +167,11 @@ def _log(msg, ascii_fallback=None):
     """安全打印：Windows GBK 控制台打印中文/⚠ 会抛 UnicodeEncodeError，
     这里兜底成 ASCII，保证日志永远不会让节点崩掉。"""
     try:
-        print(msg)
+        print(msg, flush=True)
     except UnicodeEncodeError:
         try:
             print(ascii_fallback if ascii_fallback is not None
-                  else msg.encode("ascii", "replace").decode("ascii"))
+                  else msg.encode("ascii", "replace").decode("ascii"), flush=True)
         except Exception:
             pass
 

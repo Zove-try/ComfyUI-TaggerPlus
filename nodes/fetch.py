@@ -6,11 +6,11 @@
 设计目标：新用户装完插件，下拉里直接选"⬇ 需要下载"的条目就能跑起来，
 不需要知道 HuggingFace、不需要命令行、不需要手动改名。
 
-- 默认先试 HuggingFace 官方，失败自动切 hf-mirror.com 国内镜像
-- 可用环境变量 TAGGERPLUS_HF_ENDPOINT 强制指定镜像（如 https://hf-mirror.com）
-- 可用插件目录下的 taggerplus_dirs.json 里的 "hf_endpoint" 字段指定
-- 下载走 .part 临时文件 + 原子改名，中断不会留下坏文件
-- 全部输出 ASCII，避免 Windows GBK 控制台崩溃
+进度可见性（重点）：
+- 用 ComfyUI 官方的 `comfy.utils.ProgressBar` → **网页 UI 的节点上会显示进度条**
+- 所有日志 flush=True（ComfyUI 启动器下 stdout 是块缓冲，不 flush 就看不到）
+- 每 3 秒至少输出一次（哪怕网速很慢也有动静），并显示 MB/s 与剩余时间估算
+- 下载前后都有明确的开始/结束提示，避免"看起来卡住"
 """
 import json
 import os
@@ -23,7 +23,6 @@ import urllib.request
 _HERE = os.path.dirname(os.path.realpath(__file__))
 _PACK = os.path.dirname(_HERE)
 
-#: 已知模型：显示名 -> (HF 仓库, [(远端文件名, 保存名)], 体积说明)
 KNOWN = {
     "wd14": {
         "wd-eva02-large-tagger-v3": ("SmilingWolf/wd-eva02-large-tagger-v3",
@@ -49,12 +48,13 @@ KNOWN = {
     },
 }
 
-MARK = "\u2b07 "          # ⬇
+MARK = "\u2b07 "
 SUFFIX = "  (需下载)"
+TAG = "[TaggerPlus]"
+_print_lock = None
 
 
 def endpoints():
-    """返回要依次尝试的下载源"""
     envs = [os.environ.get("TAGGERPLUS_HF_ENDPOINT")]
     cfg = os.path.join(_PACK, "taggerplus_dirs.json")
     if os.path.exists(cfg):
@@ -69,81 +69,136 @@ def endpoints():
     return out
 
 
-def _log(msg):
+def _log(msg=""):
+    """安全 + 立即刷新（ComfyUI 启动器下 stdout 是块缓冲，不 flush 控制台看不到）"""
     try:
-        print(msg)
+        print(msg, flush=True)
     except UnicodeEncodeError:
-        print(msg.encode("ascii", "replace").decode("ascii"))
+        try:
+            print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
+        except Exception:
+            pass
 
 
 def _human(n):
-    return f"{n/1024/1024:.1f} MB" if n >= 1024 * 1024 else f"{n/1024:.0f} KB"
+    if n >= 1024 ** 3:
+        return f"{n/1024**3:.2f} GB"
+    if n >= 1024 * 1024:
+        return f"{n/1024/1024:.1f} MB"
+    return f"{n/1024:.0f} KB"
 
 
-def download_file(url, dest, timeout=30, max_bytes=None):
-    """流式下载 + 进度输出 + .part 原子改名"""
+class _NullBar:
+    def update(self, *a, **k):
+        pass
+
+    def update_absolute(self, *a, **k):
+        pass
+
+
+def _make_bar(total_mb):
+    """ComfyUI 官方进度条 → 网页 UI 节点上会出现进度条；不在 ComfyUI 里则静默降级"""
+    try:
+        import comfy.utils
+        return comfy.utils.ProgressBar(max(1, int(total_mb)))
+    except Exception:
+        return _NullBar()
+
+
+def download_file(url, dest, timeout=30, max_bytes=None, label=None):
+    """流式下载：进度条 + 每 3 秒输出一次 + .part 原子改名"""
     part = dest + ".part"
     req = urllib.request.Request(url, headers={"User-Agent": "ComfyUI-TaggerPlus"})
+    label = label or os.path.basename(dest)
     t0 = time.time()
     got = 0
-    last = -1
     with urllib.request.urlopen(req, timeout=timeout) as r:
         total = int(r.headers.get("Content-Length") or 0)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
+        bar = _make_bar(total / 1024 / 1024) if total else _NullBar()
+        _log(f"{TAG} 开始下载 {label}"
+             + (f"（{_human(total)}）" if total else "（大小未知）") + f" → {os.path.basename(dest)}")
+        last_t, last_mb = t0, 0
+        win = [(t0, 0)]                                  # 滑动窗口，用于算瞬时速度
         with open(part, "wb") as f:
             while True:
-                chunk = r.read(4 << 20)
+                chunk = r.read(1 << 20)
                 if not chunk:
                     break
                 f.write(chunk)
                 got += len(chunk)
+                mb = got >> 20
+                if mb > last_mb:                       # 每 1 MB 推进一次进度条
+                    try:
+                        bar.update(mb - last_mb)
+                    except Exception:
+                        pass
+                    last_mb = mb
+                now = time.time()
+                if now - last_t >= 3.0:                # 至少每 3 秒说一句话
+                    win.append((now, got))
+                    while len(win) > 2 and now - win[0][0] > 8.0:
+                        win.pop(0)
+                    dt_win = now - win[0][0]
+                    sp = (got - win[0][1]) / dt_win if dt_win > 0.5 else got / max(now - t0, 1e-6)
+                    if total:
+                        pct = got * 100 / total
+                        eta = (total - got) / max(sp, 1e-6)
+                        eta_s = f"{int(eta//60)}分{int(eta%60):02d}秒" if eta < 3600 else f"{eta/60:.0f}分"
+                        _log(f"{TAG}   下载中 {pct:5.1f}%  {_human(got)} / {_human(total)}"
+                             f"  {sp/1024/1024:.1f} MB/s  剩余约 {eta_s}")
+                    else:
+                        _log(f"{TAG}   下载中 {_human(got)}  {sp/1024/1024:.1f} MB/s")
+                    last_t = now
                 if max_bytes and got >= max_bytes:
-                    _log(f"    [test] stopped after {_human(got)}")
+                    _log(f"{TAG}   [测试] 已到上限，停止在 {_human(got)}")
                     break
-                if total:
-                    pct = int(got * 100 / total)
-                    if pct >= last + 10:
-                        last = pct
-                        sp = got / max(time.time() - t0, 1e-6)
-                        _log(f"    {pct:3d}%  {_human(got)}/{_human(total)}  {sp/1024/1024:.1f} MB/s")
     if max_bytes and got >= max_bytes:
         os.remove(part)
         return got
     os.replace(part, dest)
     sp = got / max(time.time() - t0, 1e-6)
-    _log(f"    100%  {_human(got)}  avg {sp/1024/1024:.1f} MB/s  -> {os.path.basename(dest)}")
+    _log(f"{TAG} 下载完成 {os.path.basename(dest)}  {_human(got)}  用时 {time.time()-t0:.1f}s"
+         f"  平均 {sp/1024/1024:.1f} MB/s")
     return got
 
 
 def fetch(kind, name, dest_dir, max_bytes=None):
-    """下载一个已知模型到 dest_dir；返回 True/False"""
+    """下载一个已知模型；返回 True/False"""
     spec = KNOWN.get(kind, {}).get(name)
     if not spec:
-        _log(f"[TaggerPlus] unknown model: {name}")
+        _log(f"{TAG} 未知模型：{name}")
         return False
     repo, files, size, _note = spec
     os.makedirs(dest_dir, exist_ok=True)
+    eps = endpoints()
+    _log(f"{TAG} 需要下载模型 {name}（{size}），共 {len(files)} 个文件，"
+         f"依次尝试 {len(eps)} 个下载源")
     errors = []
-    for ep in endpoints():
+    for ep in eps:
         try:
-            _log(f"[TaggerPlus] downloading {name} ({size}) from {ep} ...")
-            for remote, tpl in files:
-                url = f"{ep}/{repo}/resolve/main/{remote}"
-                download_file(url, os.path.join(dest_dir, tpl.format(name=name)), max_bytes=max_bytes)
-            _log(f"[TaggerPlus] done: {name} -> {dest_dir}")
+            _log(f"{TAG} 使用下载源：{ep}")
+            for i, (remote, tpl) in enumerate(files, 1):
+                _log(f"{TAG} 文件 {i}/{len(files)}：{remote}")
+                download_file(f"{ep}/{repo}/resolve/main/{remote}",
+                              os.path.join(dest_dir, tpl.format(name=name)),
+                              max_bytes=max_bytes, label=f"{name} · {remote}")
+            _log(f"{TAG} ✓ 模型就绪：{name} → {dest_dir}")
             return True
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
-            errors.append(f"{ep} -> {msg}")
-            _log(f"[TaggerPlus] failed from {ep}: {msg}")
-    _log("[TaggerPlus] all endpoints failed:\n  " + "\n  ".join(errors))
-    _log("[TaggerPlus] tip: set TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com "
-         "or add a proxy (HTTPS_PROXY=http://127.0.0.1:port)")
+            errors.append(f"{ep} → {msg}")
+            _log(f"{TAG} ✗ 该源失败：{msg}")
+            _log(f"{TAG} 换下一个源重试…")
+    _log(f"{TAG} ✗ 所有下载源都失败了：")
+    for e in errors:
+        _log(f"{TAG}     {e}")
+    _log(f"{TAG} 建议：① 设置环境变量 TAGGERPLUS_HF_ENDPOINT=https://hf-mirror.com "
+         f"② 或设置 HTTPS_PROXY=http://127.0.0.1:端口 走代理 ③ 或按 README 手动下载")
     return False
 
 
 def combo_entries(kind, installed):
-    """下拉列表 = 已装模型 + 未装但可下载的模型"""
     out = list(installed)
     for name, (repo, files, size, note) in KNOWN.get(kind, {}).items():
         if name not in installed:
@@ -152,7 +207,6 @@ def combo_entries(kind, installed):
 
 
 def parse_selection(sel):
-    """从下拉选择里解析出 (真实模型名, 是否需要下载)"""
     if sel.startswith(MARK):
         return sel[len(MARK):].split(SUFFIX)[0].strip(), True
     return sel, False

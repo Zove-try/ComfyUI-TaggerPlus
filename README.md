@@ -45,6 +45,25 @@ WD14 Tagger Plus 的 model 下拉：
 下载源会**先试 HuggingFace 官方，失败自动切 hf-mirror.com 国内镜像**。
 中断不会留下坏文件（用 `.part` 临时文件 + 原子改名）。
 
+#### 下载进度看得见（不会以为卡住了）
+
+- **网页 UI**：节点上会显示进度条（用 ComfyUI 官方 `comfy.utils.ProgressBar`，按 MB 推进）
+- **控制台**：至少每 3 秒输出一行，带百分比、已下载/总量、实时速度、剩余时间
+
+```
+[TaggerPlus] 需要下载模型 wd-vit-tagger-v3（361 MB），共 2 个文件，依次尝试 2 个下载源
+[TaggerPlus] 使用下载源：https://huggingface.co
+[TaggerPlus] 文件 1/2：model.onnx
+[TaggerPlus] 开始下载 wd-vit-tagger-v3 · model.onnx（361.0 MB） → wd-vit-tagger-v3.onnx
+[TaggerPlus]   下载中  42.3%  152.7 MB / 361.0 MB  4.8 MB/s  剩余约 00分43秒
+[TaggerPlus] 下载完成 wd-vit-tagger-v3.onnx  361.0 MB  用时 75.2s  平均 4.8 MB/s
+[TaggerPlus] 文件 2/2：selected_tags.csv
+[TaggerPlus] ✓ 模型就绪：wd-vit-tagger-v3 → ComfyUI/models/wd14_tagger
+```
+
+另外，**加载模型/创建 ONNX 会话**这种耗时步骤也会先打印一行状态
+（`正在加载 … 可能 10~50 秒，之后会缓存复用`），不会静默。
+
 可自动下载的模型：
 
 | 模型 | 体积 | 说明 |
@@ -257,6 +276,18 @@ MIT licensed; the PixAI architecture code is vendored from
 2. 重启的是 **跑着 8188 端口的那个 ComfyUI 进程**吗？（不是关掉网页就行）
 3. 控制台（不是节点界面）里有没有 ORT 的报错？把报错发到 issue 里
 4. 如果用的是 CUDA 12 版 torch，其实不用装 —— 检查一下 `torch/lib/cublasLt64_12.dll` 是否存在
+</details>
+
+<details>
+<summary><b>Q：下载模型时感觉没反应 / 以为卡住了？</b></summary>
+
+现在不会了：
+
+- **节点上有进度条**（网页 UI 里直接能看到百分比在动）
+- **控制台每 3 秒一行**：百分比 / 已下载 / 实时速度 / 剩余时间
+- 换下载源、下载每个文件、加载模型都会明确打印
+
+如果连一行都没有：说明插件版本旧了，`git pull` 更新一下。
 </details>
 
 <details>

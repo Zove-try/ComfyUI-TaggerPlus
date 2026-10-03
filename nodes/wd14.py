@@ -93,6 +93,9 @@ def model_dir():
 
 # ---------------------------------------------------------------- 设备 / 会话
 _DLL_READY = False
+#: os.add_dll_directory 返回的句柄必须一直持有！否则对象被垃圾回收后，
+#: 该目录会从 DLL 搜索路径里消失 → CUDA 会间歇性地加载失败、静默退回 CPU。
+_DLL_HANDLES = []
 _SESSIONS = {}
 _CSVS = {}
 _LOCK = threading.Lock()
@@ -124,7 +127,7 @@ def _prepare_dll_paths():
         if not os.path.isdir(d):
             continue
         try:
-            os.add_dll_directory(d)
+            _DLL_HANDLES.append(os.add_dll_directory(d))     # 必须持有句柄
         except Exception:
             pass
         os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
@@ -230,11 +233,11 @@ def _log(msg, ascii_fallback=None):
     """安全打印：Windows GBK 控制台打印中文/⚠ 会抛 UnicodeEncodeError，
     这里兜底成 ASCII，保证日志永远不会让节点崩掉。"""
     try:
-        print(msg)
+        print(msg, flush=True)
     except UnicodeEncodeError:
         try:
             print(ascii_fallback if ascii_fallback is not None
-                  else msg.encode("ascii", "replace").decode("ascii"))
+                  else msg.encode("ascii", "replace").decode("ascii"), flush=True)
         except Exception:
             pass
 
@@ -299,6 +302,10 @@ class WD14TaggerPlus:
         csv_path = vocab_path(onnx_path)
 
         providers = pick_providers(device)
+        cached = (onnx_path, tuple(providers)) in _SESSIONS
+        if not cached:
+            _log(f"[TaggerPlus/WD14] 正在加载 {name} 并创建 ONNX 会话…"
+                 f"（首次或换设备后可能 10~50 秒，之后会缓存复用）")
         sess = get_session(onnx_path, providers)
         label = device_label(sess, providers)
 
