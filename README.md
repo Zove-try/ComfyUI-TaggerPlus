@@ -77,17 +77,32 @@ PixAI 节点：    5.92s（首张含加载） / 0.62s / 0.61s
 而 ComfyUI 便携包里的 torch 往往带的是 **CUDA 13**（`cublasLt64_13.dll`），文件名不同 → 加载失败 →
 **静默退回 CPU**。ORT 只在 stderr 打一行警告，节点日志完全看不到。
 
-### 让 CUDA 真正生效
+### 让 CUDA 真正生效（实测有效）
+
+不用改动 ComfyUI 主环境 —— 把 CUDA 12 运行库装到**插件自己的目录**里，本插件会自动把它
+加入 DLL 搜索路径：
 
 ```bash
-pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+"<ComfyUI>/python/python.exe" -m pip install --target "<ComfyUI>/custom_nodes/ComfyUI-TaggerPlus/cuda12" \
+    nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 nvidia-curand-cu12
 ```
 
-装完后 DLL 位于 `site-packages/nvidia/*/bin/`。本插件在创建会话前会自动把这些目录加入
-DLL 搜索路径；若仍显示 CPU，把它们复制到 `site-packages/onnxruntime/capi/` 即可。
+> 约 1.35 GB。之所以需要它：`onnxruntime-gpu` 的 CUDA EP 是针对 **CUDA 12** 编译的，而
+> ComfyUI 便携包里的 `torch` 通常带 **CUDA 13**（`cublasLt64_13.dll`），**文件名不同 → 找不到**。
+> cuDNN 9 一般已随 torch 提供，无需另装。
 
-装好后重新跑一次，`device` 输出会从
-`CPU ⚠ 请求了 GPU 但回退到 CPU` 变成 `GPU · <你的显卡>`。
+### 修好之后（本机 RTX 5060 Ti 实测）
+
+| | 原版节点 | TaggerPlus |
+|---|---|---|
+| WD14 首张 | 16.50 s | 49 s（一次性：加载 1.35 GB CUDA 12 运行库 + 建 CUDA 会话） |
+| WD14 后续每张 | 16.47 s | **0.11 – 0.19 s** |
+| PixAI 首张 | 5.92 s | 3.7 s |
+| PixAI 后续每张 | 0.61 s | **0.55 s** |
+
+**93 张图只出标签：25 分钟 → 约 1 分钟。**
+修好后 `device` 输出会从 `CPU ⚠ 请求了 GPU 但回退到 CPU` 变成 `GPU · NVIDIA GeForce RTX 5060 Ti`，
+并且控制台会打印具体的修复命令（如果没修的话）。
 
 ## 兼容性 / 一致性
 
