@@ -218,7 +218,7 @@ ComfyUI/models/pixai_tagger/pixai-tagger-v1.0/
 
 #### 方式 A：离线包
 
-> 下载地址：https://pan.quark.cn/s/77632a836e96
+> 下载地址（夸克网盘，直接下载、无需提取码）：https://pan.quark.cn/s/77632a836e96
 > 文件名：`ComfyUI-TaggerPlus_CUDA12运行库_Windows.zip`
 > 大小：787 MB（解压后约 1.1 GB）
 > SHA256：`287643aa255738c49ead59e2d3dc7562879d4bebb6a0ef1a7d221936de607df5`
