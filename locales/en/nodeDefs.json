@@ -1,0 +1,97 @@
+{
+  "WD14TaggerPlus": {
+    "display_name": "WD14 Tagger Plus",
+    "description": "WD-series image tagger. Supports ONNX (auto-adapting NHWC/NCHW) and safetensors + timm community models. Caches the ONNX session and reports the device actually used.",
+    "inputs": {
+      "image": { "name": "image" },
+      "model": {
+        "name": "model",
+        "tooltip": "Two formats are auto-detected, no conversion needed:\n  - ONNX (.onnx + tag csv): adapts NHWC / NCHW automatically\n  - safetensors + timm (<name>/model.safetensors + config.json): community models\nEntries marked with a download arrow are fetched on first use (official source first, then mirror)."
+      },
+      "threshold": {
+        "name": "threshold",
+        "tooltip": "General tag threshold (upstream default 0.35). Some community models need more, e.g. canary recommends 0.61."
+      },
+      "character_threshold": {
+        "name": "character_threshold",
+        "tooltip": "Character tag threshold (upstream default 0.85). Align it when comparing against another node."
+      },
+      "device": {
+        "name": "device",
+        "tooltip": "auto uses CUDA when available; a failed load falls back and is reported in the device output."
+      },
+      "replace_underscore": {
+        "name": "replace_underscore",
+        "tooltip": "Turn blue_eyes into blue eyes. Note downstream classifiers that split on whitespace."
+      },
+      "escape_parens": {
+        "name": "escape_parens",
+        "tooltip": "Upstream escapes ( ) into \\( \\); disabling keeps tag lookups working downstream."
+      },
+      "sort_by_confidence": {
+        "name": "sort_by_confidence",
+        "tooltip": "On: sort by confidence, highest first. Off: vocabulary order, same as upstream."
+      },
+      "trailing_comma": { "name": "trailing_comma" },
+      "exclude_tags": {
+        "name": "exclude_tags",
+        "tooltip": "Comma separated tags to exclude, case-insensitive."
+      },
+      "preprocess": {
+        "name": "preprocess",
+        "tooltip": "Framing for community models. auto/pad resizes the long side and pads to a square (keeps the whole image, recommended); crop resizes the short side and centre-crops."
+      },
+      "color_order": {
+        "name": "color_order",
+        "tooltip": "Channel order. auto is BGR, the WD-series convention. If colour tags look wrong (e.g. blonde hair tagged blue_hair), try rgb."
+      }
+    },
+    "outputs": {
+      "0": { "name": "tags" },
+      "1": { "name": "device" }
+    }
+  },
+  "PixAITaggerPlus": {
+    "display_name": "PixAI Tagger Plus",
+    "description": "PixAI Tagger v1.0. Models are picked from a dropdown of the ComfyUI models directory instead of a hand-typed path.",
+    "inputs": {
+      "image": { "name": "image" },
+      "model": {
+        "name": "model",
+        "tooltip": "Scanned from ComfyUI/models/pixai_tagger/. Entries marked with a download arrow are fetched on first use."
+      },
+      "threshold_mode": {
+        "name": "threshold_mode",
+        "tooltip": "custom uses the six thresholds below; optimal_calibrated uses the model's per-tag calibrated thresholds and ignores them."
+      },
+      "general_threshold": { "name": "general_threshold" },
+      "character_threshold": { "name": "character_threshold" },
+      "copyright_threshold": { "name": "copyright_threshold" },
+      "style_threshold": { "name": "style_threshold" },
+      "meta_threshold": { "name": "meta_threshold" },
+      "rating_threshold": { "name": "rating_threshold" },
+      "device": { "name": "device" },
+      "config_override": {
+        "name": "config_override",
+        "tooltip": "Usually left on auto. Only needed when a directory contains several config.json files."
+      },
+      "sort_by_confidence": { "name": "sort_by_confidence" },
+      "character_first": { "name": "character_first" },
+      "include_style": { "name": "include_style" },
+      "include_meta": { "name": "include_meta" },
+      "include_rating": { "name": "include_rating" },
+      "replace_underscore": { "name": "replace_underscore" },
+      "exclude_tags": { "name": "exclude_tags" }
+    },
+    "outputs": {
+      "0": { "name": "tags_string" },
+      "1": { "name": "character_tags" },
+      "2": { "name": "copyright_tags" },
+      "3": { "name": "general_tags" },
+      "4": { "name": "artist-style_tags" },
+      "5": { "name": "meta_tags" },
+      "6": { "name": "rating_tags" },
+      "7": { "name": "device" }
+    }
+  }
+}

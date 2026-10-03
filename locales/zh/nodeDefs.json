@@ -1,0 +1,97 @@
+{
+  "WD14TaggerPlus": {
+    "display_name": "WD14 反推 Plus",
+    "description": "WD 系列图像反推。支持 ONNX（自动适配 NHWC / NCHW）与 safetensors + timm 社区模型，会话缓存，并报告实际使用的设备。",
+    "inputs": {
+      "image": { "name": "图像" },
+      "model": {
+        "name": "模型",
+        "tooltip": "两种格式自动识别、无需转换：\n  - ONNX（.onnx + 词表 csv）：自动适配 NHWC / NCHW 布局\n  - safetensors + timm（<模型名>/model.safetensors + config.json）：社区模型\n带下载箭头 ⬇ 的条目会在首次使用时自动下载（优先官方源，失败切国内镜像）。"
+      },
+      "threshold": {
+        "name": "通用标签阈值",
+        "tooltip": "通用标签阈值（原版默认 0.35）。部分社区模型需要更高，如 canary 官方建议 0.61。"
+      },
+      "character_threshold": {
+        "name": "角色标签阈值",
+        "tooltip": "角色标签阈值（原版默认 0.85）。与其他节点对比时建议对齐。"
+      },
+      "device": {
+        "name": "运行设备",
+        "tooltip": "auto = 有 CUDA 就用；加载失败会自动回退，并在 device 输出中说明。"
+      },
+      "replace_underscore": {
+        "name": "下划线转空格",
+        "tooltip": "把 blue_eyes 变成 blue eyes。注意：会让下游按空格切词的分类器失效。"
+      },
+      "escape_parens": {
+        "name": "转义括号",
+        "tooltip": "原版会把 ( ) 转义成 \\( \\)；关闭可让下游按标签查表的节点正常工作。"
+      },
+      "sort_by_confidence": {
+        "name": "按置信度排序",
+        "tooltip": "开启 = 按置信度从高到低；关闭 = 词表顺序（与原版一致）。"
+      },
+      "trailing_comma": { "name": "结尾加逗号" },
+      "exclude_tags": {
+        "name": "排除标签",
+        "tooltip": "要排除的标签，逗号分隔，大小写不敏感。"
+      },
+      "preprocess": {
+        "name": "预处理构图",
+        "tooltip": "社区模型的构图方式。auto/pad = 长边缩放并补白边成正方形（保留整张图，推荐）；crop = 短边缩放后中心裁剪。"
+      },
+      "color_order": {
+        "name": "通道顺序",
+        "tooltip": "auto 为 BGR，即 WD 系列的约定。若颜色类标签明显不对（例如金发被识别为 blue_hair），可改试 rgb。"
+      }
+    },
+    "outputs": {
+      "0": { "name": "标签" },
+      "1": { "name": "设备" }
+    }
+  },
+  "PixAITaggerPlus": {
+    "display_name": "PixAI 反推 Plus",
+    "description": "PixAI Tagger v1.0。模型从 ComfyUI 模型目录下拉选择，无需手输路径。",
+    "inputs": {
+      "image": { "name": "图像" },
+      "model": {
+        "name": "模型",
+        "tooltip": "自动扫描 ComfyUI/models/pixai_tagger/。带下载箭头 ⬇ 的条目会在首次使用时自动下载。"
+      },
+      "threshold_mode": {
+        "name": "阈值模式",
+        "tooltip": "custom = 使用下面 6 个阈值；optimal_calibrated = 使用模型自带的逐标签校准阈值（会忽略下面 6 个）。"
+      },
+      "general_threshold": { "name": "通用阈值" },
+      "character_threshold": { "name": "角色阈值" },
+      "copyright_threshold": { "name": "系列阈值" },
+      "style_threshold": { "name": "画风阈值" },
+      "meta_threshold": { "name": "元信息阈值" },
+      "rating_threshold": { "name": "分级阈值" },
+      "device": { "name": "运行设备" },
+      "config_override": {
+        "name": "指定配置文件",
+        "tooltip": "一般保持 auto。仅当同一目录下有多份 config.json 时才需要指定。"
+      },
+      "sort_by_confidence": { "name": "按置信度排序" },
+      "character_first": { "name": "角色标签优先" },
+      "include_style": { "name": "包含画风标签" },
+      "include_meta": { "name": "包含元信息标签" },
+      "include_rating": { "name": "包含分级标签" },
+      "replace_underscore": { "name": "下划线转空格" },
+      "exclude_tags": { "name": "排除标签" }
+    },
+    "outputs": {
+      "0": { "name": "全部标签" },
+      "1": { "name": "角色标签" },
+      "2": { "name": "系列标签" },
+      "3": { "name": "通用标签" },
+      "4": { "name": "画风标签" },
+      "5": { "name": "元信息标签" },
+      "6": { "name": "分级标签" },
+      "7": { "name": "设备" }
+    }
+  }
+}

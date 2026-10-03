@@ -57,8 +57,10 @@ KNOWN = {
     },
 }
 
+#: 下拉条目的文案保持语言中立（中文说明放在可本地化的 tooltip 里），
+#: 表达式形如 "\u2b07 <模型名> · <体积>"，解析时只依赖 MARK 与分隔符。
 MARK = "\u2b07 "
-SUFFIX = "  (需下载)"
+SEP = " \u00b7 "
 TAG = "[TaggerPlus]"
 _print_lock = None
 
@@ -212,11 +214,12 @@ def combo_entries(kind, installed):
     for name, (repo, files, size, note, _sub) in KNOWN.get(kind, {}).items():
         if name in installed or f"{name} (timm)" in installed:
             continue
-        out.append(f"{MARK}{name}{SUFFIX} · {size} · {note}")
+        out.append(f"{MARK}{name}{SEP}{size}")
     return out
 
 
 def parse_selection(sel):
+    """从下拉选项解析出 (模型名, 是否需下载)"""
     if sel.startswith(MARK):
-        return sel[len(MARK):].split(SUFFIX)[0].strip(), True
+        return sel[len(MARK):].split(SEP)[0].strip(), True
     return sel, False
