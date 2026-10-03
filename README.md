@@ -1,5 +1,7 @@
 # ComfyUI-TaggerPlus
 
+![cover](assets/cover.png)
+
 两个「纠正版」反推节点，修掉现有 WD14 / PixAI 节点的实际痛点。
 
 ![category](https://img.shields.io/badge/ComfyUI-custom--node-blue) ![license](https://img.shields.io/badge/license-MIT-green)
@@ -20,7 +22,7 @@
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/<you>/ComfyUI-TaggerPlus
+git clone https://github.com/1537197750zyq-ai/ComfyUI-TaggerPlus
 ```
 
 或用 ComfyUI-Manager →「Install via Git URL」填仓库地址。重启 ComfyUI，
@@ -48,7 +50,8 @@ git clone https://github.com/<you>/ComfyUI-TaggerPlus
 
 #### 方式 A：网盘下载（推荐，不用命令行、不用联网 pip）
 
-> **下载地址：【待填 —— 上传后把网盘链接贴到这里】**
+> **下载地址（夸克网盘）：https://pan.quark.cn/s/77632a836e96**
+> 提取方式：打开链接直接下载，无需提取码
 > 文件名：`ComfyUI-TaggerPlus_CUDA12运行库_Windows.zip`
 > 大小：**787 MB**（解压后约 1.1 GB）
 > SHA256：`287643aa255738c49ead59e2d3dc7562879d4bebb6a0ef1a7d221936de607df5`
@@ -134,6 +137,10 @@ Two "fixed" tagger nodes for ComfyUI:
   used** as an output.
 - **PixAI Tagger Plus** — upstream requires typing absolute model paths. This node auto-scans
   `ComfyUI/models/pixai_tagger/` and gives you a dropdown.
+
+**Windows users who need the CUDA 12 runtime** can grab the offline package (787 MB) from
+[Quark Drive](https://pan.quark.cn/s/77632a836e96) and unzip its `cuda12/` folder into the plugin directory —
+no pip, no command line. Linux/macOS use `install_cuda12.sh`.
 
 Outputs are byte-identical to the upstream nodes (verified), so you can swap them in safely.
 MIT licensed; the PixAI architecture code is vendored from
