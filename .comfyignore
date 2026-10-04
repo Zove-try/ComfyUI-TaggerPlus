@@ -1,0 +1,8 @@
+# 不打包进 Registry 发布包
+cuda12/
+taggerplus_dirs.json
+__pycache__/
+*.pyc
+*.onnx
+*.safetensors
+*.zip

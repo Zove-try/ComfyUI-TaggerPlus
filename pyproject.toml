@@ -8,6 +8,11 @@ requires-python = ">=3.9"
 dependencies = [
     "onnxruntime-gpu>=1.17",
     "safetensors>=0.4",
+    "timm>=0.9",
+]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Environment :: GPU :: NVIDIA CUDA",
 ]
 
 [project.urls]
@@ -16,6 +21,7 @@ Repository = "https://github.com/Zove-try/ComfyUI-TaggerPlus"
 Issues = "https://github.com/Zove-try/ComfyUI-TaggerPlus/issues"
 
 [tool.comfy]
-PublisherId = "Zove-try"   # 闇€涓庝綘鍦?ComfyUI Registry 娉ㄥ唽鐨?publisher id 涓€鑷?
-DisplayName = "TaggerPlus"
-Icon = ""
+PublisherId = "zove-try"
+DisplayName = "Tagger Plus (WD14 / PixAI)"
+Icon = "https://raw.githubusercontent.com/Zove-try/ComfyUI-TaggerPlus/main/assets/icon.png"
+Banner = "https://raw.githubusercontent.com/Zove-try/ComfyUI-TaggerPlus/main/assets/cover.png"
