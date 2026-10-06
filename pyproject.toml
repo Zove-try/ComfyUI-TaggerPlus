@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-taggerplus"
-version = "0.1.5"
+version = "0.1.6"
 description = "Fixed WD14 / PixAI tagger nodes for ComfyUI: cached ONNX sessions, visible device reporting, dropdown model selection"
 readme = "README.md"
 license = { file = "LICENSE" }

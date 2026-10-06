@@ -105,6 +105,24 @@ def models_root():
 _CACHE = {}
 _LOCK = threading.Lock()
 
+from . import tp_cache
+
+
+def _release_caches():
+    """清空本模块的模型缓存（供 tp_cache 调用）"""
+    with _LOCK:
+        n = len(_CACHE)
+        for obj in _CACHE.values():
+            try:
+                obj.model.to("cpu")            # 先搬离显存，引用一断就能立刻回收
+            except Exception:
+                pass
+        _CACHE.clear()
+    return n
+
+
+tp_cache.register_releaser(_release_caches)
+
 
 class _Loaded:
     __slots__ = ("model", "config", "tags", "tags_split", "best_thr", "device")

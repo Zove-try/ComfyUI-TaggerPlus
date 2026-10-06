@@ -154,6 +154,21 @@ _TIMM = {}
 _CSVS = {}
 _LOCK = threading.Lock()
 
+from . import tp_cache
+
+
+def _release_caches():
+    """清空本模块的会话/模型缓存（供 tp_cache 调用）"""
+    n = 0
+    with _LOCK:
+        for d in (_SESSIONS, _TIMM):
+            n += len(d)
+            d.clear()
+    return n
+
+
+tp_cache.register_releaser(_release_caches)
+
 
 def _prepare_dll_paths():
     global _DLL_READY
@@ -204,6 +219,7 @@ def get_session(onnx_path, providers):
     _prepare_dll_paths()
     import onnxruntime as ort
     so = ort.SessionOptions()
+    so.enable_cpu_mem_arena = False          # 不在内存里留 arena，释放更彻底
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     sess = ort.InferenceSession(onnx_path, sess_options=so, providers=list(providers))
     with _LOCK:
