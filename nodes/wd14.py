@@ -400,8 +400,6 @@ class WD14TaggerPlus:
                                                      "tooltip": "auto = 有 CUDA 就用；加载失败会自动回退并在 device 输出里说明"}),
             },
             "optional": {
-    "unload_after_run": ("BOOLEAN", {"default": False,
-        "label_on": "跑完即释放显存", "label_off": "保留缓存（更快）"}),
                 "replace_underscore": ("BOOLEAN", {"default": False,
                                                    "tooltip": "把 blue_eyes 变成 blue eyes（注意：会让下游分类器按空格切词）"}),
                 "escape_parens": ("BOOLEAN", {"default": False,
@@ -417,6 +415,8 @@ class WD14TaggerPlus:
                 "color_order": (["auto", "bgr", "rgb"], {"default": "auto",
                     "tooltip": "通道顺序。auto = BGR（WD 系列及其微调模型的约定）；"
                                "若某模型输出的颜色类标签明显不对（如把金发认成 blue_hair），可试 rgb"}),
+                "unload_after_run": ("BOOLEAN", {"default": False,
+                    "label_on": "跑完即释放显存", "label_off": "保留缓存（更快）"}),
             },
         }
 
@@ -551,16 +551,20 @@ def _install_unload_switch(cls):
     _orig = cls.tag
 
     def _tag(self, *a, **kw):
+        # 先把开关取出来，绝不能把它转发给 tag()（签名里没有这个参数）
+        unload = kw.pop("unload_after_run", False)
         try:
             return _orig(self, *a, **kw)
         finally:
-            if kw.get("unload_after_run"):
+            if unload:
                 freed = tp_cache.release_all()
-                detail = ", ".join(f"{k}:{v}" for k, v in freed) or "无"
-                print(f"[TaggerPlus] unload_after_run → 已释放缓存（{detail}）")
+                if freed:                     # 没东西可释放时保持安静
+                    detail = ", ".join(f"{k}:{v}" for k, v in freed)
+                    print(f"[TaggerPlus] unload_after_run → 已释放缓存（{detail}）")
 
     _tag.__name__ = "tag"
     _tag.__doc__ = _orig.__doc__
+    _tag._taggerplus_orig = _orig        # 暴露原函数，便于调试/内省
     cls.tag = _tag
     return cls
 

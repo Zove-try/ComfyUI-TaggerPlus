@@ -30,7 +30,7 @@ from .nodes.pixai import PixAITaggerPlus
 
 tp_cache.install_hooks()
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 NODE_CLASS_MAPPINGS = {
     "WD14TaggerPlus": WD14TaggerPlus,
