@@ -30,7 +30,25 @@ from .nodes.pixai import PixAITaggerPlus
 
 tp_cache.install_hooks()
 
-__version__ = "0.1.8"
+
+def _write_runtime_marker():
+    """记录 ComfyUI 实际使用的解释器路径，供 install_cuda12 脚本使用。
+
+    桌面端的 python 在用户目录里、便携包在旁边目录，脚本猜不到，
+    记录一次就永远能对上（文件不入库，见 .gitignore / .comfyignore）。
+    """
+    try:
+        import sys as _sys
+        p = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".taggerplus_runtime.txt")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(_sys.executable + "\n" + _sys.prefix + "\n")
+    except Exception:
+        pass
+
+
+_write_runtime_marker()
+
+__version__ = "0.1.9"
 
 NODE_CLASS_MAPPINGS = {
     "WD14TaggerPlus": WD14TaggerPlus,
