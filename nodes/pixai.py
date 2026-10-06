@@ -340,7 +340,9 @@ def _install_unload_switch(cls):
         # 先把开关取出来，绝不能把它转发给 tag()（签名里没有这个参数）
         unload = kw.pop("unload_after_run", False)
         try:
-            return _orig(self, *a, **kw)
+            out = _orig(self, *a, **kw)
+            tp_cache.mark_used()          # 记下使用时间，避免被常规内存回收清掉
+            return out
         finally:
             if unload:
                 freed = tp_cache.release_all()

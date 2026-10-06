@@ -13,10 +13,14 @@
 import gc
 import sys
 import threading
+import time
 
 _RELEASERS = []
 _LOCK = threading.Lock()
 _HOOKED = False
+_LAST_USED = 0.0
+IDLE_SECONDS = 30.0      # 距上次反推多久才允许被 ComfyUI 的卸载动作回收
+
 
 
 def register_releaser(fn):
@@ -24,6 +28,26 @@ def register_releaser(fn):
     with _LOCK:
         if fn not in _RELEASERS:
             _RELEASERS.append(fn)
+
+
+def mark_used():
+    """节点每次跑完调用：记录使用时间，避免被 ComfyUI 的常规内存回收顺手清掉"""
+    global _LAST_USED
+    _LAST_USED = time.time()
+
+
+def release_if_idle(idle_seconds=None, quiet=True):
+    """只在「距上次反推超过 idle_seconds」时才释放。
+
+    ComfyUI 在执行流程里会频繁调用 unload_all_models()/free_memory()，
+    如果每次都释放，反推模型就会被反复卸载 → 每次都要重新加载（实测 5~7 秒）。
+    """
+    global _LAST_USED
+    idle = IDLE_SECONDS if idle_seconds is None else idle_seconds
+    if _LAST_USED and (time.time() - _LAST_USED) < idle:
+        return None
+    _LAST_USED = 0.0
+    return release_all(quiet=quiet)
 
 
 def release_all(quiet=False):
@@ -63,14 +87,17 @@ def install_hooks():
     except Exception:                               # noqa: BLE001
         return
 
-    def wrap(name, after=True):
+    def wrap(name, idle_guard=False):
         orig = getattr(mm, name, None)
         if orig is None or getattr(orig, "_taggerplus_wrapped", False):
             return
         def patched(*a, **kw):
             out = orig(*a, **kw)
             try:
-                release_all(quiet=True)
+                if idle_guard:
+                    release_if_idle()
+                else:
+                    release_all(quiet=True)
             except Exception:                       # noqa: BLE001
                 pass
             return out
@@ -78,7 +105,9 @@ def install_hooks():
         patched._taggerplus_orig = orig
         setattr(mm, name, patched)
 
-    wrap("unload_all_models")     # 「卸载模型」按钮 / POST /free
-    wrap("free_memory")           # 显存紧张时的自动释放
+    # 只挂 unload_all_models。「卸载模型」按钮和 POST /free 走它；
+    # 不能挂 free_memory —— ComfyUI 加载任何模型都会调它，会导致反推模型被反复卸载。
+    # 而且 unload_all_models 在执行流程里也会被调用，所以再加一层空闲判定。
+    wrap("unload_all_models", idle_guard=True)
     _HOOKED = True
     print("[TaggerPlus] 已挂接 ComfyUI 显存释放钩子（卸载模型时同步回收反推缓存）")

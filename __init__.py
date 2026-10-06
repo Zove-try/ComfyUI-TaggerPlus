@@ -48,7 +48,7 @@ def _write_runtime_marker():
 
 _write_runtime_marker()
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
 
 NODE_CLASS_MAPPINGS = {
     "WD14TaggerPlus": WD14TaggerPlus,
