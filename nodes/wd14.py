@@ -400,6 +400,8 @@ class WD14TaggerPlus:
                                                      "tooltip": "auto = 有 CUDA 就用；加载失败会自动回退并在 device 输出里说明"}),
             },
             "optional": {
+    "unload_after_run": ("BOOLEAN", {"default": False,
+        "label_on": "跑完即释放显存", "label_off": "保留缓存（更快）"}),
                 "replace_underscore": ("BOOLEAN", {"default": False,
                                                    "tooltip": "把 blue_eyes 变成 blue eyes（注意：会让下游分类器按空格切词）"}),
                 "escape_parens": ("BOOLEAN", {"default": False,
@@ -539,3 +541,28 @@ class WD14TaggerPlus:
         if escape_parens:
             out = [t.replace("(", "\\(").replace(")", "\\)") for t in out]
         return ", ".join(out) + ("," if trailing_comma and out else "")
+
+
+# ---------------------------------------------------------------------------
+# 跑完即释放显存的开关（unload_after_run）
+# 包一层而不是改 tag() 签名：所有 return 路径都会被覆盖
+# ---------------------------------------------------------------------------
+def _install_unload_switch(cls):
+    _orig = cls.tag
+
+    def _tag(self, *a, **kw):
+        try:
+            return _orig(self, *a, **kw)
+        finally:
+            if kw.get("unload_after_run"):
+                freed = tp_cache.release_all()
+                detail = ", ".join(f"{k}:{v}" for k, v in freed) or "无"
+                print(f"[TaggerPlus] unload_after_run → 已释放缓存（{detail}）")
+
+    _tag.__name__ = "tag"
+    _tag.__doc__ = _orig.__doc__
+    cls.tag = _tag
+    return cls
+
+
+_install_unload_switch(WD14TaggerPlus)

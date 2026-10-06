@@ -30,18 +30,16 @@ from .nodes.pixai import PixAITaggerPlus
 
 tp_cache.install_hooks()
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
 NODE_CLASS_MAPPINGS = {
     "WD14TaggerPlus": WD14TaggerPlus,
     "PixAITaggerPlus": PixAITaggerPlus,
-    "TaggerPlusUnload": tp_cache.TaggerPlusUnload,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "WD14TaggerPlus": "WD14 Tagger Plus ⚡",
     "PixAITaggerPlus": "PixAI Tagger Plus ⚡",
-    "TaggerPlusUnload": "Tagger Plus 卸载模型 (Unload)",
 }
 
 # 把模型目录注册进 ComfyUI（方便用户在标准位置放模型）

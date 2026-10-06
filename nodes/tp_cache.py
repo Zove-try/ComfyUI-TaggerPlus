@@ -82,30 +82,3 @@ def install_hooks():
     wrap("free_memory")           # 显存紧张时的自动释放
     _HOOKED = True
     print("[TaggerPlus] 已挂接 ComfyUI 显存释放钩子（卸载模型时同步回收反推缓存）")
-
-
-class TaggerPlusUnload:
-    """把上游内容原样传给下游，同时释放 TaggerPlus 占用的显存。
-
-    接在反推节点后面即可：跑完反推 → 立即释放模型缓存，把显存让给后面的采样器。
-    """
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}, "optional": {"anything": ("*",)}}
-
-    RETURN_TYPES = ("*",)
-    RETURN_NAMES = ("anything",)
-    FUNCTION = "run"
-    CATEGORY = "TaggerPlus"
-    DESCRIPTION = ("释放 TaggerPlus 反推模型占用的显存（ONNX 会话与 timm/PixAI 模型缓存），"
-                   "输入原样透传，可接在反推节点后面")
-
-    def run(self, anything=None):
-        freed = release_all()
-        if freed:
-            detail = ", ".join(f"{k}:{v}" for k, v in freed)
-            print(f"[TaggerPlus] 已释放缓存 -> {detail}")
-        else:
-            print("[TaggerPlus] 无可释放的缓存")
-        return (anything,)

@@ -214,6 +214,8 @@ class PixAITaggerPlus:
                 "rating_threshold": ("FLOAT", {"default": 0.41, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
             "optional": {
+    "unload_after_run": ("BOOLEAN", {"default": False,
+        "label_on": "跑完即释放显存", "label_off": "保留缓存（更快）"}),
                 "device": (["auto", "cuda", "cpu"], {"default": "auto"}),
                 "config_override": (["auto"] + list_configs(), {"default": "auto",
                     "tooltip": "一般不用改；只有当同名目录里有多份 config.json 时才需要指定"}),
@@ -325,3 +327,28 @@ class PixAITaggerPlus:
              f"character {len(fc)} copyright {len(fp)} general {len(fg)} style {len(fs)}")
         return (", ".join(combined), ", ".join(fc), ", ".join(fp), ", ".join(fg),
                 ", ".join(fs), ", ".join(fm), ", ".join(fr), dev_label)
+
+
+# ---------------------------------------------------------------------------
+# 跑完即释放显存的开关（unload_after_run）
+# 包一层而不是改 tag() 签名：所有 return 路径都会被覆盖
+# ---------------------------------------------------------------------------
+def _install_unload_switch(cls):
+    _orig = cls.tag
+
+    def _tag(self, *a, **kw):
+        try:
+            return _orig(self, *a, **kw)
+        finally:
+            if kw.get("unload_after_run"):
+                freed = tp_cache.release_all()
+                detail = ", ".join(f"{k}:{v}" for k, v in freed) or "无"
+                print(f"[TaggerPlus] unload_after_run → 已释放缓存（{detail}）")
+
+    _tag.__name__ = "tag"
+    _tag.__doc__ = _orig.__doc__
+    cls.tag = _tag
+    return cls
+
+
+_install_unload_switch(PixAITaggerPlus)
